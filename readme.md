@@ -14,6 +14,28 @@
 - Installed utilities: `talosctl`, `kubectl` (must be in `$PATH`)
 - Linux, macOS or Windows
 
+## Installation
+
+Go to the [Releases page](https://github.com/vasyakrg/talostpl/releases) and download the binary for your OS and architecture.
+
+Or use curl/wget (replace `<version>` and `<os-arch>` with the actual values):
+
+```sh
+# Example for Linux amd64
+curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/v<version>/talostpl-linux-amd64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
+```sh
+# Example for macOS arm64
+wget -O talostpl "https://github.com/vasyakrg/talostpl/releases/download/v<version>/talostpl-darwin-arm64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
+After installation, you can run `talostpl` from anywhere in your terminal.
+
 ## Run
 
 ### Interactive mode
