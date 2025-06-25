@@ -44,3 +44,32 @@ jobs:
           files: dist/**/talostpl-*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  update-homebrew-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: vasyakrg/homebrew-talostpl
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-talostpl
+
+      - name: Download new release
+        run: |
+          LATEST_URL=$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep "browser_download_url" | grep "darwin-amd64" | cut -d '"' -f 4)
+          curl -L -o talostpl-darwin-arm64 "$LATEST_URL"
+          SHA256=$(shasum -a 256 talostpl-darwin-arm64 | awk '{print $1}')
+          sed -i "s|url \".*\"|url \"$LATEST_URL\"|" homebrew-talostpl/Formula/talostpl.rb
+          sed -i "s|sha256 \".*\"|sha256 \"$SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
+          VERSION=$(echo $LATEST_URL | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/v//')
+          sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb"
+
+      - name: Commit and push
+        run: |
+          cd homebrew-talostpl
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add Formula/talostpl.rb
+          git commit -m "Update talostpl formula to $VERSION"
+          git push
