@@ -1,0 +1,25 @@
+machine:
+  install:
+    disk: /dev/sda
+    image: factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4
+  network:
+    nameservers:
+      - 8.8.8.8
+      - 8.8.4.4
+  registries:
+    mirrors:
+      docker.io:
+        endpoints:
+          - https://dockerhub.timeweb.cloud
+          - https://mirror.gcr.io
+  time:
+    servers:
+      - 1.ru.pool.ntp.org
+      - 2.ru.pool.ntp.org
+      - 3.ru.pool.ntp.org
+cluster:
+  network:
+    cni:
+      name: none
+  proxy:
+    disabled: true

@@ -1,0 +1,11 @@
+machine:
+  network:
+    hostname: cp-1
+    interfaces:
+      - addresses:
+          - 192.168.23.11/24
+        dhcp: false
+        interface: ens18
+        routes:
+          - gateway: 192.168.23.1
+            network: 0.0.0.0/0

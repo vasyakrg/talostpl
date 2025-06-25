@@ -1,0 +1,19 @@
+machine:
+  kernel:
+    modules:
+      - name: drbd
+        parameters:
+          - usermode_helper=disabled
+      - name: drbd_transport_tcp
+      - name: dm-thin-pool
+  network:
+    hostname: worker-3
+    interfaces:
+      - addresses:
+          - 192.168.23.14/24
+        deviceSelector:
+          physical: true
+        dhcp: false
+        routes:
+          - gateway: 192.168.23.1
+            network: 0.0.0.0/0
