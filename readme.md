@@ -34,6 +34,13 @@ chmod +x talostpl
 sudo mv talostpl /usr/local/bin/
 ```
 
+For MacOS users and brew packet manager
+
+```bash
+brew tap vasyakrg/talostpl
+brew install talostpl
+```
+
 After installation, you can run `talostpl` from anywhere in your terminal.
 
 ## Run
