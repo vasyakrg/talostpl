@@ -1,62 +1,62 @@
 # talostpl
 
+## Features
+
+- **Interactive wizard**: Step-by-step prompts for all cluster parameters.
+- **Non-interactive mode**: All answers and IPs are taken from a YAML file, no prompts.
+- **Automatic patch generation**: Generates all required Talos patches and config files.
+- **Integration with talosctl**: Runs `talosctl` to generate secrets, configs, apply patches, and bootstrap the cluster.
+- **Kubeconfig export**: Automatically exports kubeconfig to your `$HOME/.kube` directory.
+- **Cluster initialization control**: You can skip cluster initialization (apply-config/bootstrap) at the final step if needed (interactive) or via `initCluster` (from-file).
+
 ## Requirements
 
-- Go 1.20+ (latest stable recommended)
 - Installed utilities: `talosctl`, `kubectl` (must be in `$PATH`)
-- Linux or macOS
-
-## Build
-
-### With Make (recommended)
-
-1. Create a `Makefile` with the following content:
-
-    ```makefile
-    build:
-    	go build -o talostpl main.go
-    ```
-
-2. Run:
-
-    ```sh
-    make build
-    ```
-
-   This will produce the `talostpl` binary.
-
-### Without Make
-
-```sh
-go build -o talostpl main.go
-```
+- Linux, macOS or Windows
 
 ## Run
+
+### Interactive mode
 
 ```sh
 ./talostpl generate
 ```
 
-or with flags (all flags are optional, defaults are set):
+### With flags (all flags are optional, defaults are set)
 
 ```sh
-./talostpl generate \
+./talostpl generate [--force] \
   --image="factory.talos.dev/metal-installer/..." \
   --k8s-version="1.33.2" \
   --config-dir="config"
 ```
 
-## Features
+### Non-interactive mode (from file)
 
-- **Interactive wizard**: Step-by-step prompts for all cluster parameters.
-- **Automatic patch generation**: Generates all required Talos patches and config files.
-- **Integration with talosctl**: Runs `talosctl` to generate secrets, configs, apply patches, and bootstrap the cluster.
-- **Kubeconfig export**: Automatically exports kubeconfig to your `$HOME/.kube` directory.
-- **Cluster initialization control**: You can skip cluster initialization (apply-config/bootstrap) at the final step if needed.
-- **All prompts and messages are in English.**
+```sh
+./talostpl generate --from-file=example-cluster.yaml [--force] [--config-dir=dir]
+```
+
+- In this mode, all parameters are taken from the YAML file, no questions are asked.
+- If `--force` is specified, the config directory is always cleaned without confirmation.
+- If `initCluster: true` in the file, the cluster will be initialized automatically; if `false`, only config files will be generated (no apply/bootstrap).
+
+## Command-line flags
+
+- `--image` — Talos installer image (default provided)
+- `--k8s-version` — Kubernetes version (default provided)
+- `--config-dir` — Directory for generated files (default: config)
+- `--force` — Clean config directory if not empty (in interactive mode asks for confirmation, in from-file mode always cleans)
+- `--from-file` — Path to YAML file with answers and IP addresses for non-interactive mode
 
 ## Notes
 
 - All generated files will be placed in the directory specified by `--config-dir` (default: `config`).
 - Makefile is only used for building the binary. All other functionality is handled by the Go application itself.
 - Make sure all external dependencies (`talosctl`, `kubectl`) are installed and available in your system.
+
+### Author
+
+[Yegorov Vassiliy](https://egorovanet.ru)
+
+(C)2025

@@ -1,0 +1,35 @@
+clusterName: talos-demo
+initCluster: false
+k8sVersion: 1.33.2
+image: factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4
+iface: ens18
+cpCount: 3
+workerCount: 3
+gateway: 192.168.1.1
+netmask: 24
+dns1: 8.8.8.8
+dns2: 8.8.4.4
+ntp1: 1.ru.pool.ntp.org
+ntp2: 2.ru.pool.ntp.org
+ntp3: 3.ru.pool.ntp.org
+useVIP: true
+vipIP: 192.168.1.10
+useExtBalancer: false
+extBalancerIP: ""
+disk: /dev/sda
+useDRBD: true
+useZFS: false
+useSPL: false
+useVFIOPCI: false
+useVFIOIOMMU: false
+useOVS: false
+useMirrors: true
+useMaxPods: false
+cpIPs:
+  - 192.168.1.11
+  - 192.168.1.12
+  - 192.168.1.13
+workerIPs:
+  - 192.168.1.14
+  - 192.168.1.15
+  - 192.168.1.16
