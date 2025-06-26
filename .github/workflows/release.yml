@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: "1.21"
       - name: Build
         run: |
           mkdir -p dist
@@ -57,13 +57,13 @@ jobs:
 
       - name: Download new release
         run: |
-          LATEST_URL=$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep "browser_download_url" | grep "darwin-amd64" | cut -d '"' -f 4)
-          curl -L -o talostpl-darwin-arm64 "$LATEST_URL"
-          SHA256=$(shasum -a 256 talostpl-darwin-arm64 | awk '{print $1}')
+          LATEST_URL=$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | jq -r '.assets[] | select(.name | test("darwin-amd64$")) | .browser_download_url')
+          curl -L -o talostpl-darwin-amd64 "$LATEST_URL"
+          SHA256=$(shasum -a 256 talostpl-darwin-amd64 | awk '{print $1}')
           sed -i "s|url \".*\"|url \"$LATEST_URL\"|" homebrew-talostpl/Formula/talostpl.rb
           sed -i "s|sha256 \".*\"|sha256 \"$SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
           VERSION=$(echo $LATEST_URL | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/v//')
-          sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb"
+          sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb
 
       - name: Commit and push
         run: |
