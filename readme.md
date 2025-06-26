@@ -75,7 +75,6 @@ After installation, you can run `talostpl -v` from anywhere in your terminal.
 
 - In this mode, all parameters are taken from the YAML file, no questions are asked.
 - If `--force` is specified, the config directory is always cleaned without confirmation.
-- If `initCluster: true` in the file, the cluster will be initialized automatically; if `false`, only config files will be generated (no apply/bootstrap).
 
 ## Command-line flags
 
@@ -95,4 +94,4 @@ After installation, you can run `talostpl -v` from anywhere in your terminal.
 
 [Yegorov Vassiliy](https://egorovanet.ru)
 
-(C)2025
+(C) 2025
