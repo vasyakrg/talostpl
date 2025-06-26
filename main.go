@@ -201,7 +201,7 @@ func clearDir(dir string) error {
 	return nil
 }
 
-func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []string, autoInit bool, isFromFile bool) {
+func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []string, isFromFile bool) {
 	configDir := configDir
 
 	patch := PatchConfig{
@@ -454,46 +454,47 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		fmt.Println("File talosconfig not found")
 	}
 	fmt.Println("--------------------------------")
-	// --- Применение конфигов и bootstrap ---
 	os.Chdir("..")
 	firstCP := cpIPs[0]
 	firstCPClean := strings.Split(firstCP, "/")[0]
-	if isFromFile && !autoInit {
-		fmt.Println("Cluster initialization skipped (initCluster: false)")
+	if isFromFile {
+		fmt.Println("Cluster initialization skipped (non interactive mode)")
 		return
 	}
-	if autoInit {
-		if err := runCmd("talosctl", "apply-config", "--insecure", "-n", firstCPClean, "--file", filepath.Join(configDir, "cp1.yaml")); err != nil {
-			fmt.Printf("%sError apply-config: %v%s\n", colorRed, err, colorReset)
-			os.Exit(1)
-		}
-	} else {
-		if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
-			fmt.Println("--------------------------------")
-			fmt.Println("Generate completed. Cluster initialization cancelled by user.")
-			fmt.Println("--------------------------------")
-			return
-		}
-		if err := runCmd("talosctl", "apply-config", "--insecure", "-n", firstCPClean, "--file", filepath.Join(configDir, "cp1.yaml")); err != nil {
-			fmt.Printf("%sError apply-config: %v%s\n", colorRed, err, colorReset)
-			os.Exit(1)
-		}
+	if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
+		fmt.Println("--------------------------------")
+		fmt.Println("Generate completed. Cluster initialization cancelled by user.")
+		fmt.Println("--------------------------------")
+		return
 	}
-	fmt.Println("--------------------------------")
-	if !autoInit {
-		askNumbered("Perform bootstrap on first control plane ("+firstCPClean+")? [Enter to continue]", "")
+	if err := runCmd("talosctl", "apply-config", "--insecure", "-n", firstCPClean, "--file", filepath.Join(configDir, "cp1.yaml")); err != nil {
+		fmt.Printf("%sError apply-config: %v%s\n", colorRed, err, colorReset)
+		os.Exit(1)
+	}
+	fmt.Println(colorRed + "Please, wait init and reboot first control plane, before continue" + colorReset)
+	if !askYesNoNumbered("Continue?", "y") {
+		fmt.Println("--------------------------------")
+		fmt.Println("Cluster initialization cancelled by user.")
+		fmt.Println("--------------------------------")
+		return
 	}
 	if err := runCmd("talosctl", "bootstrap", "--nodes", firstCPClean, "--endpoints", firstCPClean, "--talosconfig="+filepath.Join(configDir, "talosconfig")); err != nil {
 		fmt.Printf("%sError bootstrap: %v%s\n", colorRed, err, colorReset)
 		os.Exit(1)
 	}
-	fmt.Println("--------------------------------")
+
+	fmt.Println(colorRed + "Please, wait bootstrap first control plane, before continue" + colorReset)
+	if !askYesNoNumbered("Continue?", "y") {
+		fmt.Println("--------------------------------")
+		fmt.Println("Cluster initialization cancelled by user.")
+		fmt.Println("--------------------------------")
+		return
+	}
+
+	fmt.Println("Applying config to control planes and workers ..")
 	if ans.CPCount > 1 {
 		for i := 2; i <= ans.CPCount; i++ {
 			cpClean := strings.Split(cpIPs[i-1], "/")[0]
-			if !autoInit {
-				askNumbered(fmt.Sprintf("Apply config to control plane %d (%s)? [Enter to continue]", i, cpClean), "")
-			}
 			if err := runCmd("talosctl", "apply-config", "--insecure", "-n", cpClean, "--file", filepath.Join(configDir, fmt.Sprintf("cp%d.yaml", i))); err != nil {
 				fmt.Printf("%sError apply-config cp%d: %v%s\n", colorRed, i, err, colorReset)
 				os.Exit(1)
@@ -502,16 +503,15 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 	}
 	if ans.WorkerCount > 0 {
 		for i := 1; i <= ans.WorkerCount; i++ {
-			if !autoInit {
-				askNumbered(fmt.Sprintf("Apply config to worker-%d (%s)? [Enter to continue]", i, workerIPs[i-1]), "")
-			}
 			if err := runCmd("talosctl", "apply-config", "--insecure", "-n", workerIPs[i-1], "--file", filepath.Join(configDir, fmt.Sprintf("worker%d.yaml", i))); err != nil {
 				fmt.Printf("%sError apply-config worker%d: %v%s\n", colorRed, i, err, colorReset)
 				os.Exit(1)
 			}
 		}
 	}
+	fmt.Println("Done")
 	fmt.Println("--------------------------------")
+	fmt.Println("Generating kubeconfig ..")
 
 	kubeconfigEndpoint := ans.VIPIP
 	if kubeconfigEndpoint == "" {
@@ -525,6 +525,9 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 	fmt.Println("--------------------------------")
 	fmt.Println("Script completed")
 	fmt.Println("--------------------------------")
+	fmt.Println("Next, you need to install the network plugin Cilium")
+	fmt.Println("Documentation: https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/")
+	fmt.Println("-----------done-----------------")
 }
 
 func generateCmd() *cobra.Command {
@@ -603,7 +606,6 @@ func generateCmd() *cobra.Command {
 					UseOVS         bool     `yaml:"useOVS"`
 					UseMirrors     bool     `yaml:"useMirrors"`
 					UseMaxPods     bool     `yaml:"useMaxPods"`
-					InitCluster    bool     `yaml:"initCluster"`
 					CPIPs          []string `yaml:"cpIPs"`
 					WorkerIPs      []string `yaml:"workerIPs"`
 				}
@@ -654,11 +656,38 @@ func generateCmd() *cobra.Command {
 				for _, ip := range input.WorkerIPs {
 					usedIPs[ip] = struct{}{}
 				}
-				runGeneration(ans, usedIPs, input.CPIPs, input.WorkerIPs, input.InitCluster, true)
+				runGeneration(ans, usedIPs, input.CPIPs, input.WorkerIPs, true)
+
+				endpoint := input.CPIPs[0]
+				if input.UseVIP && input.VIPIP != "" {
+					endpoint = input.VIPIP
+				}
+
+				fmt.Println("\n-----------------------------")
+				fmt.Println("Manual cluster initialization required. Run the following commands:")
+				fmt.Println()
+				fmt.Printf("talosctl apply-config --insecure -n %s --file cp1.yaml\n", endpoint)
+				fmt.Println("---------------")
+				fmt.Println(colorRed + "Please, wait init and reboot first control plane, before run next commands" + colorReset)
+				fmt.Println("---------------")
+				fmt.Printf("talosctl bootstrap --nodes %s --endpoints %s --talosconfig=talosconfig\n", endpoint, endpoint)
+				fmt.Println("---------------")
+				fmt.Println(colorRed + "Please, wait init and reboot first control plane, before run next commands" + colorReset)
+				fmt.Println("---------------")
+				for i := 2; i <= input.CPCount; i++ {
+					fmt.Printf("talosctl apply-config --insecure -n %s --file cp%d.yaml\n", input.CPIPs[i-1], i)
+				}
+				for i := 1; i <= input.WorkerCount; i++ {
+					fmt.Printf("talosctl apply-config --insecure -n %s --file worker%d.yaml\n", input.WorkerIPs[i-1], i)
+				}
+				fmt.Printf("talosctl kubeconfig ~/.kube/%s.yaml --nodes %s --endpoints %s --talosconfig talosconfig\n", ans.ClusterName, endpoint, endpoint)
+				fmt.Println("-----------------------------\n")
+				fmt.Println("Next, you need to install the network plugin Cilium")
+				fmt.Println("Documentation: https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/")
+				fmt.Println("-----------done-----------------")
 				return
 			}
 
-			// --- Интерактивный режим (как был) ---
 			ans := Answers{}
 			ans.ClusterName = askNumbered("Enter cluster name [talos-demo]: ", "talos-demo")
 			ans.K8sVersion = askNumbered("Enter Kubernetes version ["+k8sVersion+"]: ", k8sVersion)
@@ -733,7 +762,7 @@ func generateCmd() *cobra.Command {
 					workerIPs = append(workerIPs, workerIP)
 				}
 			}
-			runGeneration(ans, usedIPs, cpIPs, workerIPs, false, false)
+			runGeneration(ans, usedIPs, cpIPs, workerIPs, false)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force clean config directory if not empty")
