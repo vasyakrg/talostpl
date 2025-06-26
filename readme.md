@@ -20,13 +20,14 @@ Go to the [Releases page](https://github.com/vasyakrg/talostpl/releases) and dow
 
 Or use curl/wget (replace `<version>` and `<os-arch>` with the actual values):
 
-For MacOS users and brew packet manager
+For MacOS arm64 (Apple Silicon) users and BREW package manager
 
 ```bash
 brew tap vasyakrg/talostpl
 brew install talostpl
 ```
 
+or
 
 ```sh
 # Example for macOS arm64
@@ -49,7 +50,7 @@ chmod +x talostpl
 sudo mv talostpl /usr/local/bin/
 ```
 
-After installation, you can run `talostpl` from anywhere in your terminal.
+After installation, you can run `talostpl -v` from anywhere in your terminal.
 
 ## Run
 
