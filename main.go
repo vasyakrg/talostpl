@@ -534,6 +534,9 @@ func generateCmd() *cobra.Command {
 		Use:   "generate",
 		Short: "Interactive Talos K8s config generator",
 		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkRequiredTools(); err != nil {
+				os.Exit(1)
+			}
 			if configDir == "" {
 				configDir = "config"
 			}
