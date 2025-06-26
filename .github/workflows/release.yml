@@ -42,6 +42,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**/talostpl-*
+          title: "Release ${{ github.ref_name }}"
+          body: |
+            - [Linux](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-linux-amd64)
+            - [Darwin](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-amd64)
+            - [Windows](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-amd64.exe)
+            - [Darwin ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-arm64)
+            - [Windows ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-arm64.exe)
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   update-homebrew-tap:
