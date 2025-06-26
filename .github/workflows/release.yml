@@ -45,9 +45,10 @@ jobs:
           title: "Release ${{ github.ref_name }}"
           body: |
             - [Linux](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-linux-amd64)
-            - [Darwin](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-amd64)
-            - [Windows](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-amd64.exe)
+            - [Linux ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-linux-arm64)
+            - [Darwin AMD64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-amd64)
             - [Darwin ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-arm64)
+            - [Windows AMD64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-amd64.exe)
             - [Windows ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-arm64.exe)
           draft: false
         env:
