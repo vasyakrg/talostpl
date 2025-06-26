@@ -65,12 +65,24 @@ jobs:
 
       - name: Download new release
         run: |
-          LATEST_URL=$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | jq -r '.assets[] | select(.name | test("darwin-amd64$")) | .browser_download_url')
-          curl -L -o talostpl-darwin-amd64 "$LATEST_URL"
-          SHA256=$(shasum -a 256 talostpl-darwin-amd64 | awk '{print $1}')
-          sed -i "s|url \".*\"|url \"$LATEST_URL\"|" homebrew-talostpl/Formula/talostpl.rb
-          sed -i "s|sha256 \".*\"|sha256 \"$SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
-          VERSION=$(echo $LATEST_URL | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/v//')
+          VERSION=$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4 | sed 's/^v//')
+          TAG="v$VERSION"
+
+          # arm64
+          ARM_URL="https://github.com/vasyakrg/talostpl/releases/download/$TAG/talostpl-darwin-arm64"
+          curl -L -o talostpl-darwin-arm64 "$ARM_URL"
+          ARM_SHA256=$(shasum -a 256 talostpl-darwin-arm64 | awk '{print $1}')
+          sed -i "0,/url \".*\"/s|url \".*\"|url \"$ARM_URL\"|" homebrew-talostpl/Formula/talostpl.rb
+          sed -i "0,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$ARM_SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
+
+          # amd64
+          AMD_URL="https://github.com/vasyakrg/talostpl/releases/download/$TAG/talostpl-darwin-amd64"
+          curl -L -o talostpl-darwin-amd64 "$AMD_URL"
+          AMD_SHA256=$(shasum -a 256 talostpl-darwin-amd64 | awk '{print $1}')
+          sed -i "1,/url \".*\"/s|url \".*\"|url \"$AMD_URL\"|" homebrew-talostpl/Formula/talostpl.rb
+          sed -i "1,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$AMD_SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
+
+          # version
           sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb
 
       - name: Commit and push

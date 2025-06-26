@@ -20,25 +20,33 @@ Go to the [Releases page](https://github.com/vasyakrg/talostpl/releases) and dow
 
 Or use curl/wget (replace `<version>` and `<os-arch>` with the actual values):
 
-```sh
-# Example for Linux amd64
-curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/v<version>/talostpl-linux-amd64"
-chmod +x talostpl
-sudo mv talostpl /usr/local/bin/
-```
-
-```sh
-# Example for macOS arm64
-wget -O talostpl "https://github.com/vasyakrg/talostpl/releases/download/v<version>/talostpl-darwin-arm64"
-chmod +x talostpl
-sudo mv talostpl /usr/local/bin/
-```
-
 For MacOS users and brew packet manager
 
 ```bash
 brew tap vasyakrg/talostpl
 brew install talostpl
+```
+
+
+```sh
+# Example for macOS arm64
+wget -O talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-darwin-arm64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
+```sh
+# Example for Linux amd64
+curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-amd64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
+```sh
+# Example for Linux arm4
+curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-arm64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
 ```
 
 After installation, you can run `talostpl` from anywhere in your terminal.
