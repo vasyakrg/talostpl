@@ -1,5 +1,4 @@
 clusterName: talos-demo
-initCluster: false
 k8sVersion: 1.33.2
 image: factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4
 iface: ens18

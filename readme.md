@@ -7,7 +7,7 @@
 - **Automatic patch generation**: Generates all required Talos patches and config files.
 - **Integration with talosctl**: Runs `talosctl` to generate secrets, configs, apply patches, and bootstrap the cluster.
 - **Kubeconfig export**: Automatically exports kubeconfig to your `$HOME/.kube` directory.
-- **Cluster initialization control**: You can skip cluster initialization (apply-config/bootstrap) at the final step if needed (interactive) or via `initCluster` (from-file).
+- **Cluster initialization control**: You can skip cluster initialization (apply-config/bootstrap) at the final step if needed (interactive).
 
 ## Requirements
 
