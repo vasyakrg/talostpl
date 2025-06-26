@@ -18,8 +18,6 @@
 
 Go to the [Releases page](https://github.com/vasyakrg/talostpl/releases) and download the binary for your OS and architecture.
 
-Or use curl/wget (replace `<version>` and `<os-arch>` with the actual values):
-
 For MacOS arm64 (Apple Silicon) users and BREW package manager
 
 ```bash
