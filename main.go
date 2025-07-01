@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"os/exec"
 	"runtime"
+	"net/http"
+	"encoding/json"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -18,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.0.6"
+	version    = "v1.0.7"
 )
 
 const (
@@ -649,6 +651,28 @@ func printManualInitHelp(input FileInput, ans Answers) {
 	fmt.Println("-----------------------------\n")
 }
 
+func checkLatestVersion() {
+	const url = "https://api.github.com/repos/vasyakrg/talostpl/releases/latest"
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("%sWarning: failed to check latest version%s\n", colorYellow, colorReset)
+		return
+	}
+	defer resp.Body.Close()
+	var data struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		fmt.Printf("%sWarning: failed to check latest version%s\n", colorYellow, colorReset)
+		return
+	}
+	if data.TagName != version {
+		fmt.Printf("%sWarning: your version is %s, latest is %s. Please update!%s\n", colorYellow, version, data.TagName, colorReset)
+	} else {
+		fmt.Printf("%sYou have the latest version %s%s\n\n", colorGreen, version, colorReset)
+	}
+}
+
 func generateCmd() *cobra.Command {
 	var force bool
 	var fromFile string
@@ -840,6 +864,7 @@ func main() {
 			cmd.Help()
 		},
 	}
+	checkLatestVersion()
 	rootCmd.PersistentFlags().StringVar(&image, "image", image, "Talos installer image")
 	rootCmd.PersistentFlags().StringVar(&k8sVersion, "k8s-version", k8sVersion, "Kubernetes version")
 	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", configDir, "Directory for configs")
