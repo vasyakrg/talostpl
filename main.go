@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.0.7"
+	version    = "v1.0.8"
 )
 
 const (
@@ -151,6 +151,28 @@ func checkRequiredTools() error {
 
 	fmt.Printf("%s✅ All required tools found%s\n", colorGreen, colorReset)
 	return nil
+}
+
+func checkLatestVersion() {
+	const url = "https://api.github.com/repos/vasyakrg/talostpl/releases/latest"
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("%s⚠️Warning: failed to check latest version%s\n", colorYellow, colorReset)
+		return
+	}
+	defer resp.Body.Close()
+	var data struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		fmt.Printf("%s⚠️Warning: failed to check latest version%s\n", colorYellow, colorReset)
+		return
+	}
+	if data.TagName != version {
+		fmt.Printf("%s⚠️ Warning: your version is %s, latest is %s. Please update!%s\n", colorYellow, version, data.TagName, colorReset)
+	} else {
+		fmt.Printf("%s✅ You have the latest version %s%s\n", colorGreen, version, colorReset)
+	}
 }
 
 func askNumbered(prompt, def string) string {
@@ -649,28 +671,6 @@ func printManualInitHelp(input FileInput, ans Answers) {
 	}
 	fmt.Printf("talosctl kubeconfig ~/.kube/%s.yaml --nodes %s --endpoints %s --talosconfig talosconfig\n", ans.ClusterName, endpoint, endpoint)
 	fmt.Println("-----------------------------\n")
-}
-
-func checkLatestVersion() {
-	const url = "https://api.github.com/repos/vasyakrg/talostpl/releases/latest"
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Printf("%sWarning: failed to check latest version%s\n", colorYellow, colorReset)
-		return
-	}
-	defer resp.Body.Close()
-	var data struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		fmt.Printf("%sWarning: failed to check latest version%s\n", colorYellow, colorReset)
-		return
-	}
-	if data.TagName != version {
-		fmt.Printf("%sWarning: your version is %s, latest is %s. Please update!%s\n", colorYellow, version, data.TagName, colorReset)
-	} else {
-		fmt.Printf("%sYou have the latest version %s%s\n\n", colorGreen, version, colorReset)
-	}
 }
 
 func generateCmd() *cobra.Command {
