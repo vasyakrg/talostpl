@@ -18,7 +18,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.0.5"
+	version    = "v1.0.6"
 )
 
 const (
@@ -260,7 +260,11 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		}
 	}
 	if ans.UseExtBalancer && ans.ExtBalancerIP != "" {
-		patch.Machine["certSANs"] = []string{ans.ExtBalancerIP}
+		ips := strings.Split(ans.ExtBalancerIP, ",")
+		for i := range ips {
+			ips[i] = strings.TrimSpace(ips[i])
+		}
+		patch.Machine["certSANs"] = ips
 	}
 	if ans.UseDRBD && ans.WorkerCount == 0 {
 		mods := []map[string]interface{}{
@@ -292,6 +296,24 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		"cni": map[string]interface{}{ "name": "none" },
 	}
 	patch.Cluster["proxy"] = map[string]interface{}{ "disabled": true }
+
+	// Формируем SAN'ы для cluster.apiServer.certSANs
+	var certSANs []string
+	if ans.UseExtBalancer && ans.ExtBalancerIP != "" {
+		for _, ip := range strings.Split(ans.ExtBalancerIP, ",") {
+			ip = strings.TrimSpace(ip)
+			if ip != "" {
+				certSANs = append(certSANs, ip)
+			}
+		}
+	}
+	if len(certSANs) > 0 {
+		if patch.Cluster["apiServer"] == nil {
+			patch.Cluster["apiServer"] = map[string]interface{}{}
+		}
+		patch.Cluster["apiServer"].(map[string]interface{})["certSANs"] = certSANs
+	}
+
 	fileWriteYAML(filepath.Join(configDir, "patch.yaml"), patch)
 	fmt.Printf("%sCreated patch.yaml%s\n", colorGreen, colorReset)
 	fmt.Println("--------------------------------")
@@ -461,9 +483,12 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		endpoints = append(endpoints, ans.VIPIP)
 	}
 	if ans.UseExtBalancer && ans.ExtBalancerIP != "" {
-		endpoints = append(endpoints, ans.ExtBalancerIP)
+		for _, ip := range strings.Split(ans.ExtBalancerIP, ",") {
+			endpoints = append(endpoints, strings.TrimSpace(ip))
+		}
 	}
-	endpointsStr := strings.Join(endpoints, ",")
+
+	endpointsStr := strings.Join(endpoints, ", ")
 	talosconfig := "talosconfig"
 	if _, err := os.Stat(talosconfig); err == nil {
 		tmpConfig := "talosconfig.tmp"
@@ -492,13 +517,6 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		fmt.Println("Cluster initialization skipped (non interactive mode)")
 		return
 	}
-	if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
-		fmt.Println("--------------------------------")
-		fmt.Println("Cluster initialization cancelled by user.")
-		fmt.Println("--------------------------------")
-		return
-	}
-
 		input := FileInput{
 			ClusterName: ans.ClusterName,
 			K8sVersion: ans.K8sVersion,
@@ -528,6 +546,14 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			UseMaxPods: ans.UseMaxPods,
 			CPIPs: cpIPs,
 			WorkerIPs: workerIPs,
+	}
+
+	if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
+		fmt.Println("--------------------------------")
+		fmt.Println("Cluster initialization cancelled by user.")
+		fmt.Println("--------------------------------")
+		printManualInitHelp(input, ans)
+		return
 	}
 
 	if err := runCmd("talosctl", "apply-config", "--insecure", "-n", firstCPClean, "--file", filepath.Join(configDir, "cp1.yaml")); err != nil {
@@ -605,11 +631,11 @@ func printManualInitHelp(input FileInput, ans Answers) {
 	fmt.Println("\n-----------------------------")
 	fmt.Println("Manual cluster initialization required. Run the following commands:")
 	fmt.Println()
-	fmt.Printf("talosctl apply-config --insecure -n %s --file cp1.yaml\n", endpoint)
+	fmt.Printf("talosctl apply-config --insecure -n %s --file cp1.yaml\n", input.CPIPs[0])
 	fmt.Println("---------------")
 	fmt.Println(colorRed + "Please, wait init and reboot first control plane, before run next commands" + colorReset)
 	fmt.Println("---------------")
-	fmt.Printf("talosctl bootstrap --nodes %s --endpoints %s --talosconfig=talosconfig\n", endpoint, endpoint)
+	fmt.Printf("talosctl bootstrap --nodes %s --endpoints %s --talosconfig=talosconfig\n", input.CPIPs[0], input.CPIPs[0])
 	fmt.Println("---------------")
 	fmt.Println(colorRed + "Please, wait bootstrap first control plane, before run next commands" + colorReset)
 	fmt.Println("---------------")
@@ -649,7 +675,6 @@ func generateCmd() *cobra.Command {
 					os.Exit(1)
 				} else {
 					if fromFile != "" {
-						// Неинтерактивный режим: всегда очищаем
 						err := clearDir(configDir)
 						if err != nil {
 							fmt.Printf("%sFailed to clean directory: %v%s\n", colorRed, err, colorReset)
@@ -728,7 +753,7 @@ func generateCmd() *cobra.Command {
 			ans.ClusterName = askNumbered("Enter cluster name [talos-demo]: ", "talos-demo")
 			ans.K8sVersion = askNumbered("Enter Kubernetes version ["+k8sVersion+"]: ", k8sVersion)
 			ans.Image = askNumbered("Enter Talos installer image ["+image+"]: ", image)
-			ans.Iface = askNumbered("Enter network interface name [ens18]: ", "ens18")
+			ans.Iface = askNumbered("Enter network interface name ens18 or eth0 may be? [ens18]: ", "ens18")
 			ans.CPCount = mustAtoi(askNumbered("Enter number of control planes (odd, max 7) [1]: ", "1"))
 			ans.WorkerCount = mustAtoi(askNumbered("Enter number of worker nodes (max 15, min 0) [3]: ", "3"))
 			ans.Gateway = askNumbered("Enter default gateway: ", "")
@@ -746,10 +771,10 @@ func generateCmd() *cobra.Command {
 					ans.VIPIP = askNumbered("Enter VIP address: ", "")
 				}
 			}
-			ans.UseExtBalancer = askYesNoNumbered("Do you need an external load balancer?", "n")
+			ans.UseExtBalancer = askYesNoNumbered("Do you need an external load balancers (SAN's proxy)?", "n")
 			ans.ExtBalancerIP = ""
 			if ans.UseExtBalancer {
-				ans.ExtBalancerIP = askNumbered("Enter external load balancer IP: ", "")
+				ans.ExtBalancerIP = askNumbered("Enter external load balancer IPs (proxy server IPs or list of SAN's) (input comma separated, if more than one): ", "")
 			}
 			ans.Disk = askNumbered("Enter disk for base OS installation [/dev/sda]: ", "/dev/sda")
 			ans.UseDRBD = askYesNoNumbered("Enable drbd support?", "y")

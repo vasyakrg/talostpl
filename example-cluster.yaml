@@ -14,7 +14,7 @@ ntp3: 3.ru.pool.ntp.org
 useVIP: true
 vipIP: 192.168.1.10
 useExtBalancer: false
-extBalancerIP: ""
+extBalancerIP: "192.168.1.8,192.168.1.9"
 disk: /dev/sda
 useDRBD: true
 useZFS: false
