@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.0.8"
+	version    = "v1.0.9"
 )
 
 const (
@@ -541,36 +541,37 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		fmt.Println("Cluster initialization skipped (non interactive mode)")
 		return
 	}
-		input := FileInput{
-			ClusterName: ans.ClusterName,
-			K8sVersion: ans.K8sVersion,
-			Image: ans.Image,
-			Iface: ans.Iface,
-			CPCount: ans.CPCount,
-			WorkerCount: ans.WorkerCount,
-			Gateway: ans.Gateway,
-			Netmask: ans.Netmask,
-			DNS1: ans.DNS1,
-			DNS2: ans.DNS2,
-			NTP1: ans.NTP1,
-			NTP2: ans.NTP2,
-			NTP3: ans.NTP3,
-			UseVIP: ans.UseVIP,
-			VIPIP: ans.VIPIP,
-			UseExtBalancer: ans.UseExtBalancer,
-			ExtBalancerIP: ans.ExtBalancerIP,
-			Disk: ans.Disk,
-			UseDRBD: ans.UseDRBD,
-			UseZFS: ans.UseZFS,
-			UseSPL: ans.UseSPL,
-			UseVFIOPCI: ans.UseVFIOPCI,
-			UseVFIOIOMMU: ans.UseVFIOIOMMU,
-			UseOVS: ans.UseOVS,
-			UseMirrors: ans.UseMirrors,
-			UseMaxPods: ans.UseMaxPods,
-			CPIPs: cpIPs,
-			WorkerIPs: workerIPs,
+	input := FileInput{
+		ClusterName: ans.ClusterName,
+		K8sVersion: ans.K8sVersion,
+		Image: ans.Image,
+		Iface: ans.Iface,
+		CPCount: ans.CPCount,
+		WorkerCount: ans.WorkerCount,
+		Gateway: ans.Gateway,
+		Netmask: ans.Netmask,
+		DNS1: ans.DNS1,
+		DNS2: ans.DNS2,
+		NTP1: ans.NTP1,
+		NTP2: ans.NTP2,
+		NTP3: ans.NTP3,
+		UseVIP: ans.UseVIP,
+		VIPIP: ans.VIPIP,
+		UseExtBalancer: ans.UseExtBalancer,
+		ExtBalancerIP: ans.ExtBalancerIP,
+		Disk: ans.Disk,
+		UseDRBD: ans.UseDRBD,
+		UseZFS: ans.UseZFS,
+		UseSPL: ans.UseSPL,
+		UseVFIOPCI: ans.UseVFIOPCI,
+		UseVFIOIOMMU: ans.UseVFIOIOMMU,
+		UseOVS: ans.UseOVS,
+		UseMirrors: ans.UseMirrors,
+		UseMaxPods: ans.UseMaxPods,
+		CPIPs: cpIPs,
+		WorkerIPs: workerIPs,
 	}
+	fileWriteYAML(filepath.Join(configDir, "cluster.yaml"), input)
 
 	if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
 		fmt.Println("--------------------------------")
@@ -652,25 +653,51 @@ func printManualInitHelp(input FileInput, ans Answers) {
 	if input.UseVIP && input.VIPIP != "" {
 		endpoint = input.VIPIP
 	}
+	var b strings.Builder
+	b.WriteString("# Manual cluster initialization commands\n\n")
+	b.WriteString("```sh\n")
 	fmt.Println("\n-----------------------------")
 	fmt.Println("Manual cluster initialization required. Run the following commands:")
 	fmt.Println()
-	fmt.Printf("talosctl apply-config --insecure -n %s --file cp1.yaml\n", input.CPIPs[0])
+	cmd := fmt.Sprintf("talosctl apply-config --insecure -n %s --file cp1.yaml", input.CPIPs[0])
+	fmt.Println(cmd)
+	b.WriteString(cmd + "\n")
 	fmt.Println("---------------")
 	fmt.Println(colorRed + "Please, wait init and reboot first control plane, before run next commands" + colorReset)
+	b.WriteString("# Please, wait init and reboot first control plane, before run next commands\n")
 	fmt.Println("---------------")
-	fmt.Printf("talosctl bootstrap --nodes %s --endpoints %s --talosconfig=talosconfig\n", input.CPIPs[0], input.CPIPs[0])
+	cmd = fmt.Sprintf("talosctl bootstrap --nodes %s --endpoints %s --talosconfig=talosconfig", input.CPIPs[0], input.CPIPs[0])
+	fmt.Println(cmd)
+	b.WriteString(cmd + "\n")
 	fmt.Println("---------------")
 	fmt.Println(colorRed + "Please, wait bootstrap first control plane, before run next commands" + colorReset)
+	b.WriteString("# Please, wait bootstrap first control plane, before run next commands\n")
 	fmt.Println("---------------")
 	for i := 2; i <= input.CPCount; i++ {
-		fmt.Printf("talosctl apply-config --insecure -n %s --file cp%d.yaml\n", input.CPIPs[i-1], i)
+		cmd = fmt.Sprintf("talosctl apply-config --insecure -n %s --file cp%d.yaml", input.CPIPs[i-1], i)
+		fmt.Println(cmd)
+		b.WriteString(cmd + "\n")
 	}
 	for i := 1; i <= input.WorkerCount; i++ {
-		fmt.Printf("talosctl apply-config --insecure -n %s --file worker%d.yaml\n", input.WorkerIPs[i-1], i)
+		cmd = fmt.Sprintf("talosctl apply-config --insecure -n %s --file worker%d.yaml", input.WorkerIPs[i-1], i)
+		fmt.Println(cmd)
+		b.WriteString(cmd + "\n")
 	}
-	fmt.Printf("talosctl kubeconfig ~/.kube/%s.yaml --nodes %s --endpoints %s --talosconfig talosconfig\n", ans.ClusterName, endpoint, endpoint)
+	cmd = fmt.Sprintf("talosctl kubeconfig ~/.kube/%s.yaml --nodes %s --endpoints %s --talosconfig talosconfig", ans.ClusterName, endpoint, endpoint)
+	fmt.Println(cmd)
+	b.WriteString(cmd + "\n")
+	b.WriteString("````\n")
 	fmt.Println("-----------------------------\n")
+	// save to commands.md
+	cmdPath := filepath.Join("config", "commands.md")
+	f, err := os.Create(cmdPath)
+	if err == nil {
+		f.WriteString(b.String())
+		f.Close()
+		fmt.Println(colorGreen + "Commands also saved to " + cmdPath + colorReset)
+	} else {
+		fmt.Println(colorRed + "Failed to save commands.md: " + err.Error() + colorReset)
+	}
 }
 
 func generateCmd() *cobra.Command {

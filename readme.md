@@ -12,13 +12,13 @@
 ## Requirements
 
 - Installed utilities: `talosctl`, `kubectl` (must be in `$PATH`)
-- Linux, macOS or Windows
+- Linux или macOS (darwin)
 
 ## Installation
 
 Go to the [Releases page](https://github.com/vasyakrg/talostpl/releases) and download the binary for your OS and architecture.
 
-For MacOS arm64 (Apple Silicon) users and BREW package manager
+For MacOS (Intel/Apple Silicon) users and BREW package manager
 
 ```bash
 brew tap vasyakrg/talostpl
@@ -87,6 +87,8 @@ After installation, you can run `talostpl -v` from anywhere in your terminal.
 ## Notes
 
 - All generated files will be placed in the directory specified by `--config-dir` (default: `config`).
+- In interactive mode, a file `cluster.yaml` with all cluster parameters and answers is automatically generated in the config directory. This file is useful for documentation or for future non-interactive runs.
+- The `cluster.yaml` file is not created in non-interactive (`--from-file`) mode.
 - Makefile is only used for building the binary. All other functionality is handled by the Go application itself.
 - Make sure all external dependencies (`talosctl`, `kubectl`) are installed and available in your system.
 
