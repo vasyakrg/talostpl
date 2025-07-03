@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux, darwin, windows]
+        goos: [linux, darwin]
         goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,6 @@ jobs:
         run: |
           mkdir -p dist
           ext=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/talostpl-${{ matrix.goos }}-${{ matrix.goarch }}${ext} main.go
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -38,18 +37,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          TAG=${{ github.ref_name }}
+          awk -v tag="$TAG" 'BEGIN{found=0} \
+            /^## /{if(found) exit} \
+            $0=="## "tag{found=1; next} \
+            found{print}' CHANGELOG.md > RELEASE_BODY.md
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**/talostpl-*
           title: "Release ${{ github.ref_name }}"
-          body: |
-            - [Linux](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-linux-amd64)
-            - [Linux ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-linux-arm64)
-            - [Darwin AMD64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-amd64)
-            - [Darwin ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-darwin-arm64)
-            - [Windows AMD64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-amd64.exe)
-            - [Windows ARM64](https://github.com/vasyakrg/talostpl/releases/download/${{ github.ref_name }}/talostpl-windows-arm64.exe)
+          body_path: RELEASE_BODY.md
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
