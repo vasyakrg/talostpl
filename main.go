@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/956b9107edd250304169d2e7a765cdd4e0c31f9097036e2e113b042e6c01bb98:v1.10.4"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.1.0"
+	version    = "v1.1.1"
 )
 
 const (
@@ -804,8 +804,17 @@ func generateCmd() *cobra.Command {
 			ans.ClusterName = askNumbered("Enter cluster name [talos-demo]: ", "talos-demo")
 			ans.K8sVersion = askNumbered("Enter Kubernetes version ["+k8sVersion+"]: ", k8sVersion)
 			ans.Image = askNumbered("Enter Talos installer image ["+image+"]: ", image)
-			ans.Iface = askNumbered("Enter network interface name ens18 or eth0 may be? [ens18]: ", "ens18")
-			ans.CPCount = mustAtoi(askNumbered("Enter number of control planes (odd, max 7) [1]: ", "1"))
+			ans.Iface = askNumbered("Enter network interface name ens18 (KVM, Proxmox) or eth0 (Nebula) may be? [ens18]: ", "ens18")
+			var cpCount int
+			for {
+				cpCount = mustAtoi(askNumbered("Enter number of control planes (odd, max 7) [1]: ", "1"))
+				if cpCount < 1 || cpCount > 7 || cpCount%2 == 0 {
+					fmt.Printf("%sEnter an odd number between 1 and 7.%s\n", colorRed, colorReset)
+					continue
+				}
+				break
+			}
+			ans.CPCount = cpCount
 			ans.WorkerCount = mustAtoi(askNumbered("Enter number of worker nodes (max 15, min 0) [3]: ", "3"))
 			ans.Gateway = askNumbered("Enter default gateway: ", "")
 			ans.Netmask = askNumbered("Enter network mask [24]: ", "24")
