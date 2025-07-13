@@ -80,13 +80,13 @@ jobs:
 
           # Update urls
           sed -i "0,/url \".*\"/s|url \".*\"|url \"$AMD_URL\"|" homebrew-talostpl/Formula/talostpl.rb
-          sed -i "0,/url \".*\"/s|url \".*\"|url \"$ARM_URL\"|" homebrew-talostpl/Formula/talostpl.rb
+          sed -i "0,/url \".*\"/s|url \".*\"|url \"$ARM_URL\"|2" homebrew-talostpl/Formula/talostpl.rb
 
           # update sha256
           AMD_SHA256=$(shasum -a 256 talostpl-darwin-amd64 | awk '{print $1}')
           ARM_SHA256=$(shasum -a 256 talostpl-darwin-arm64 | awk '{print $1}')
           sed -i 's|sha256 ".*"|sha256 "'"$AMD_SHA256"'"|' homebrew-talostpl/Formula/talostpl.rb
-          sed -i 's|sha256 ".*"|sha256 "'"$ARM_SHA256"'"|' homebrew-talostpl/Formula/talostpl.rb
+          sed -i 's|sha256 ".*"|sha256 "'"$ARM_SHA256"'"|2' homebrew-talostpl/Formula/talostpl.rb
 
           # version
           sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb
