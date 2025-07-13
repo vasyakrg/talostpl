@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.10.5"
 	k8sVersion string = "1.33.2"
 	configDir  string = "config"
-	version    = "v1.1.3"
+	version    = "v1.1.4"
 )
 
 const (
