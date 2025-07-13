@@ -41,10 +41,11 @@ jobs:
         id: changelog
         run: |
           TAG=${{ github.ref_name }}
+          echo -e "# Изменения и дополнения\n" > RELEASE_BODY.md
           awk -v tag="$TAG" 'BEGIN{found=0} \
             /^## /{if(found) exit} \
             $0=="## "tag{found=1; next} \
-            found && /^ *-/ {print}' CHANGELOG.md > RELEASE_BODY.md
+            found && /^ *-/ {print}' CHANGELOG.md >> RELEASE_BODY.md
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
