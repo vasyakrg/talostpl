@@ -48,6 +48,13 @@ chmod +x talostpl
 sudo mv talostpl /usr/local/bin/
 ```
 
+```sh
+# Example for Linux amd64
+curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-amd64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
 After installation, you can run `talostpl -v` from anywhere in your terminal.
 
 ## Run
