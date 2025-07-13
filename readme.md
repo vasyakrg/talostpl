@@ -35,6 +35,13 @@ sudo mv talostpl /usr/local/bin/
 ```
 
 ```sh
+# Example for macOS amd64
+wget -O talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-darwin-amd64"
+chmod +x talostpl
+sudo mv talostpl /usr/local/bin/
+```
+
+```sh
 # Example for Linux amd64
 curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-amd64"
 chmod +x talostpl
@@ -44,13 +51,6 @@ sudo mv talostpl /usr/local/bin/
 ```sh
 # Example for Linux arm64
 curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-arm64"
-chmod +x talostpl
-sudo mv talostpl /usr/local/bin/
-```
-
-```sh
-# Example for Linux amd64
-curl -L -o talostpl "https://github.com/vasyakrg/talostpl/releases/download/$(curl -s https://api.github.com/repos/vasyakrg/talostpl/releases/latest | grep '"tag_name":' | head -1 | cut -d '"' -f4)/talostpl-linux-amd64"
 chmod +x talostpl
 sudo mv talostpl /usr/local/bin/
 ```
