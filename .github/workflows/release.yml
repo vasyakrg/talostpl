@@ -77,7 +77,15 @@ jobs:
           sed -i "0,/url \".*\"/s|url \".*\"|url \"$ARM_URL\"|" homebrew-talostpl/Formula/talostpl.rb
           sed -i "0,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$ARM_SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
 
+          # amd64
+          AMD_URL="https://github.com/vasyakrg/talostpl/releases/download/$TAG/talostpl-darwin-amd64"
+          curl -L -o talostpl-darwin-amd64 "$AMD_URL"
+          AMD_SHA256=$(shasum -a 256 talostpl-darwin-amd64 | awk '{print $1}')
+          sed -i "0,/url \".*\"/s|url \".*\"|url \"$AMD_URL\"|" homebrew-talostpl/Formula/talostpl.rb
+          sed -i "0,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$AMD_SHA256\"|" homebrew-talostpl/Formula/talostpl.rb
+
           # version
+          sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb
           sed -i "s|version \".*\"|version \"$VERSION\"|" homebrew-talostpl/Formula/talostpl.rb
 
       - name: Commit and push
