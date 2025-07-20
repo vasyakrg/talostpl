@@ -2,3 +2,5 @@
 distrib/*
 config/*
 release.sh
+cluster.yaml
+commands.md
