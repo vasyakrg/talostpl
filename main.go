@@ -18,9 +18,9 @@ import (
 
 var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.10.5"
-	k8sVersion string = "1.33.2"
+	k8sVersion string = "1.33.3"
 	configDir  string = "config"
-	version    = "v1.1.4"
+	version    = "v1.1.5"
 )
 
 const (
@@ -571,7 +571,7 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		CPIPs: cpIPs,
 		WorkerIPs: workerIPs,
 	}
-	fileWriteYAML(filepath.Join(configDir, "cluster.yaml"), input)
+	fileWriteYAML("cluster.yaml", input)
 
 	if !askYesNoNumbered("Do you want to start cluster initialization?", "y") {
 		fmt.Println("--------------------------------")
@@ -689,7 +689,7 @@ func printManualInitHelp(input FileInput, ans Answers) {
 	b.WriteString("````\n")
 	fmt.Println("-----------------------------\n")
 	// save to commands.md
-	cmdPath := filepath.Join("config", "commands.md")
+	cmdPath := "commands.md"
 	f, err := os.Create(cmdPath)
 	if err == nil {
 		f.WriteString(b.String())
@@ -804,7 +804,7 @@ func generateCmd() *cobra.Command {
 			ans.ClusterName = askNumbered("Enter cluster name [talos-demo]: ", "talos-demo")
 			ans.K8sVersion = askNumbered("Enter Kubernetes version ["+k8sVersion+"]: ", k8sVersion)
 			ans.Image = askNumbered("Enter Talos installer image ["+image+"]: ", image)
-			ans.Iface = askNumbered("Enter network interface name ens18 (KVM, Proxmox) or eth0 (Nebula) may be? [ens18]: ", "ens18")
+			ans.Iface = askNumbered("Enter network interface name: ens18 for KVM, Proxmox or eth0 for Nebula, OpenStack [ens18]: ", "ens18")
 			var cpCount int
 			for {
 				cpCount = mustAtoi(askNumbered("Enter number of control planes (odd, max 7) [1]: ", "1"))
