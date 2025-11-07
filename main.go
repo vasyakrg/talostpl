@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.3"
+	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.5"
 	k8sVersion string = "1.34.1"
 	configDir  string = "config"
-	version    = "v1.1.8"
+	version    = "v1.1.9"
 )
 
 const (
