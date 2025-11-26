@@ -104,6 +104,12 @@ Add new node with automatic configuration application:
 ./talostpl add --cp=3 --address=192.168.1.23 --auto-apply
 ```
 
+Add new node using custom configuration directory:
+
+```sh
+./talostpl add --worker=2 --address=192.168.1.25 --config=/path/to/custom/config
+```
+
 **Requirements for adding nodes:**
 
 - Existing configuration directory with `controlplane.yaml` or `worker.yaml`
@@ -130,6 +136,7 @@ Add new node with automatic configuration application:
 - `--worker` — Worker node number (e.g., `--worker=4` for worker4.patch/worker4.yaml)
 - `--address` — IP address for the new node (required)
 - `--auto-apply` — Automatically apply configuration to the node after generation (optional)
+- `--config` — Path to configuration directory (overrides global --config-dir flag)
 
 ## Notes
 
@@ -138,7 +145,8 @@ Add new node with automatic configuration application:
 - The `cluster.yaml` file is not created in non-interactive (`--from-file`) mode.
 - When adding nodes, the tool uses existing base patch files (`cp1.patch` or `worker1.patch`) as templates and only changes the IP address and hostname.
 - The `add` command automatically detects network mask from the base patch file and applies it to the new node.
-- If `--auto-apply` fails, the tool displays the manual command to apply the configuration.
+- The `--config` flag allows specifying a custom configuration directory path, overriding the global `--config-dir` setting.
+- If `--auto-apply` is used and user declines or if application fails, the tool displays the manual command to apply the configuration.
 - Makefile is only used for building the binary. All other functionality is handled by the Go application itself.
 - Make sure all external dependencies (`talosctl`, `kubectl`) are installed and available in your system.
 

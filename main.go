@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.5"
 	k8sVersion string = "1.34.1"
 	configDir  string = "config"
-	version    = "v1.2.0"
+	version    = "v1.2.1"
 )
 
 const (
@@ -235,6 +235,11 @@ func runCmd(name string, args ...string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()
+}
+
+func printApplyCommand(address, configPath string) {
+	fmt.Printf("%sYou can apply configuration manually with command:%s\n", colorYellow, colorReset)
+	fmt.Printf("talosctl apply-config --insecure -n %s --file %s\n", address, configPath)
 }
 
 func clearDir(dir string) error {
@@ -896,6 +901,7 @@ func addCmd() *cobra.Command {
 	var workerNum int
 	var address string
 	var autoApply bool
+	var configPath string
 
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -906,7 +912,9 @@ func addCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if configDir == "" {
+			if configPath != "" {
+				configDir = configPath
+			} else if configDir == "" {
 				configDir = "config"
 			}
 
@@ -1065,6 +1073,8 @@ func addCmd() *cobra.Command {
 				if !askYesNoNumbered(fmt.Sprintf("Apply configuration to node %s? (Y/n)", address), "y") {
 					fmt.Printf("%sConfiguration application cancelled by user.%s\n", colorYellow, colorReset)
 					os.Chdir("..")
+					fullConfigPath := filepath.Join(configDir, outputName)
+					printApplyCommand(address, fullConfigPath)
 					return
 				}
 
@@ -1072,8 +1082,7 @@ func addCmd() *cobra.Command {
 				if err := runCmd("talosctl", "apply-config", "--insecure", "-n", address, "--file", configPath); err != nil {
 					fmt.Printf("%sError applying config: %v%s\n", colorRed, err, colorReset)
 					fullConfigPath := filepath.Join(configDir, outputName)
-					fmt.Printf("%sYou can apply configuration manually with command:%s\n", colorYellow, colorReset)
-					fmt.Printf("talosctl apply-config --insecure -n %s --file %s\n", address, fullConfigPath)
+					printApplyCommand(address, fullConfigPath)
 					os.Chdir("..")
 					os.Exit(1)
 				}
@@ -1088,6 +1097,7 @@ func addCmd() *cobra.Command {
 	cmd.Flags().IntVar(&workerNum, "worker", 0, "Worker node number")
 	cmd.Flags().StringVar(&address, "address", "", "IP address for the new node")
 	cmd.Flags().BoolVar(&autoApply, "auto-apply", false, "Automatically apply configuration to the node")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to configuration directory (overrides --config-dir)")
 	return cmd
 }
 
