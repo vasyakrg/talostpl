@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.5"
 	k8sVersion string = "1.34.1"
 	configDir  string = "config"
-	version    = "v1.2.1"
+	version    = "v1.2.2"
 )
 
 const (
@@ -901,7 +901,6 @@ func addCmd() *cobra.Command {
 	var workerNum int
 	var address string
 	var autoApply bool
-	var configPath string
 
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -912,9 +911,7 @@ func addCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if configPath != "" {
-				configDir = configPath
-			} else if configDir == "" {
+			if configDir == "" {
 				configDir = "config"
 			}
 
@@ -1097,7 +1094,6 @@ func addCmd() *cobra.Command {
 	cmd.Flags().IntVar(&workerNum, "worker", 0, "Worker node number")
 	cmd.Flags().StringVar(&address, "address", "", "IP address for the new node")
 	cmd.Flags().BoolVar(&autoApply, "auto-apply", false, "Automatically apply configuration to the node")
-	cmd.Flags().StringVar(&configPath, "config", "", "Path to configuration directory (overrides --config-dir)")
 	return cmd
 }
 
