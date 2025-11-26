@@ -8,6 +8,7 @@
 - **Integration with talosctl**: Runs `talosctl` to generate secrets, configs, apply patches, and bootstrap the cluster.
 - **Kubeconfig export**: Automatically exports kubeconfig to your `$HOME/.kube` directory.
 - **Cluster initialization control**: You can skip cluster initialization (apply-config/bootstrap) at the final step if needed (interactive).
+- **Node addition**: Add new control plane or worker nodes to existing cluster configuration.
 
 ## Requirements
 
@@ -83,19 +84,61 @@ After installation, you can run `talostpl -v` from anywhere in your terminal.
 - In this mode, all parameters are taken from the YAML file, no questions are asked.
 - If `--force` is specified, the config directory is always cleaned without confirmation.
 
+### Add new nodes to existing cluster
+
+Add new control plane node:
+
+```sh
+./talostpl add --cp=2 --address=192.168.1.22
+```
+
+Add new worker node:
+
+```sh
+./talostpl add --worker=4 --address=192.168.1.24
+```
+
+Add new node with automatic configuration application:
+
+```sh
+./talostpl add --cp=3 --address=192.168.1.23 --auto-apply
+```
+
+**Requirements for adding nodes:**
+
+- Existing configuration directory with `controlplane.yaml` or `worker.yaml`
+- Existing `talosconfig` file
+- Existing `cp1.patch` or `worker1.patch` as base template
+- Target node number must not already exist (e.g., `cp2.patch` should not exist)
+
 ## Command-line flags
+
+### Global flags (for all commands)
 
 - `--image` — Talos installer image (default provided)
 - `--k8s-version` — Kubernetes version (default provided)
 - `--config-dir` — Directory for generated files (default: config)
+
+### Generate command flags
+
 - `--force` — Clean config directory if not empty (in interactive mode asks for confirmation, in from-file mode always cleans)
 - `--from-file` — Path to YAML file with answers and IP addresses for non-interactive mode
+
+### Add command flags
+
+- `--cp` — Control plane node number (e.g., `--cp=2` for cp2.patch/cp2.yaml)
+- `--worker` — Worker node number (e.g., `--worker=4` for worker4.patch/worker4.yaml)
+- `--address` — IP address for the new node (required)
+- `--auto-apply` — Automatically apply configuration to the node after generation (optional)
 
 ## Notes
 
 - All generated files will be placed in the directory specified by `--config-dir` (default: `config`).
 - In interactive mode, a file `cluster.yaml` with all cluster parameters and answers is automatically generated in the config directory. This file is useful for documentation or for future non-interactive runs.
 - The `cluster.yaml` file is not created in non-interactive (`--from-file`) mode.
+- When adding nodes, the tool uses existing base patch files (`cp1.patch` or `worker1.patch`) as templates and only changes the IP address and hostname.
+- The `add` command automatically detects network mask from the base patch file and applies it to the new node.
+- If `--auto-apply` fails, the tool displays the manual command to apply the configuration.
 - Makefile is only used for building the binary. All other functionality is handled by the Go application itself.
 - Make sure all external dependencies (`talosctl`, `kubectl`) are installed and available in your system.
 

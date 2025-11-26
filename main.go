@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.5"
 	k8sVersion string = "1.34.1"
 	configDir  string = "config"
-	version    = "v1.1.9"
+	version    = "v1.2.0"
 )
 
 const (
@@ -891,6 +891,206 @@ func generateCmd() *cobra.Command {
 	return cmd
 }
 
+func addCmd() *cobra.Command {
+	var cpNum int
+	var workerNum int
+	var address string
+	var autoApply bool
+
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add new node based on existing configuration",
+		Long:  `Add new node configuration based on existing cp1.patch or worker1.patch`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkRequiredTools(); err != nil {
+				os.Exit(1)
+			}
+
+			if configDir == "" {
+				configDir = "config"
+			}
+
+			if cpNum == 0 && workerNum == 0 {
+				fmt.Printf("%sError: must specify either --cp or --worker%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			if cpNum > 0 && workerNum > 0 {
+				fmt.Printf("%sError: cannot specify both --cp and --worker%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			if address == "" {
+				fmt.Printf("%sError: --address is required%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			var nodeType string
+			var nodeNum int
+			var basePatchFile string
+			var baseYamlFile string
+			var newPatchFile string
+			var newYamlFile string
+
+			if cpNum > 0 {
+				nodeType = "cp"
+				nodeNum = cpNum
+				basePatchFile = filepath.Join(configDir, "cp1.patch")
+				baseYamlFile = filepath.Join(configDir, "controlplane.yaml")
+				newPatchFile = filepath.Join(configDir, fmt.Sprintf("cp%d.patch", nodeNum))
+				newYamlFile = filepath.Join(configDir, fmt.Sprintf("cp%d.yaml", nodeNum))
+			} else {
+				nodeType = "worker"
+				nodeNum = workerNum
+				basePatchFile = filepath.Join(configDir, "worker1.patch")
+				baseYamlFile = filepath.Join(configDir, "worker.yaml")
+				newPatchFile = filepath.Join(configDir, fmt.Sprintf("worker%d.patch", nodeNum))
+				newYamlFile = filepath.Join(configDir, fmt.Sprintf("worker%d.yaml", nodeNum))
+			}
+
+			talosconfigFile := filepath.Join(configDir, "talosconfig")
+
+			if _, err := os.Stat(baseYamlFile); os.IsNotExist(err) {
+				fmt.Printf("%sError: base file %s does not exist%s\n", colorRed, baseYamlFile, colorReset)
+				os.Exit(1)
+			}
+
+			if _, err := os.Stat(talosconfigFile); os.IsNotExist(err) {
+				fmt.Printf("%sError: %s does not exist%s\n", colorRed, talosconfigFile, colorReset)
+				os.Exit(1)
+			}
+
+			if _, err := os.Stat(basePatchFile); os.IsNotExist(err) {
+				fmt.Printf("%sError: base patch file %s does not exist%s\n", colorRed, basePatchFile, colorReset)
+				os.Exit(1)
+			}
+
+			if _, err := os.Stat(newPatchFile); err == nil {
+				fmt.Printf("%sError: patch file %s already exists%s\n", colorRed, newPatchFile, colorReset)
+				os.Exit(1)
+			}
+
+			if _, err := os.Stat(newYamlFile); err == nil {
+				fmt.Printf("%sError: config file %s already exists%s\n", colorRed, newYamlFile, colorReset)
+				os.Exit(1)
+			}
+
+			f, err := os.Open(basePatchFile)
+			if err != nil {
+				fmt.Printf("%sError reading base patch file: %v%s\n", colorRed, err, colorReset)
+				os.Exit(1)
+			}
+			defer f.Close()
+
+			var patchData map[string]interface{}
+			dec := yaml.NewDecoder(f)
+			if err := dec.Decode(&patchData); err != nil {
+				fmt.Printf("%sError parsing base patch file: %v%s\n", colorRed, err, colorReset)
+				os.Exit(1)
+			}
+
+			machine, ok := patchData["machine"].(map[string]interface{})
+			if !ok {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			network, ok := machine["network"].(map[string]interface{})
+			if !ok {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			interfaces, ok := network["interfaces"].([]interface{})
+			if !ok || len(interfaces) == 0 {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			interfaceMap, ok := interfaces[0].(map[string]interface{})
+			if !ok {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			addresses, ok := interfaceMap["addresses"].([]interface{})
+			if !ok || len(addresses) == 0 {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			oldAddress, ok := addresses[0].(string)
+			if !ok {
+				fmt.Printf("%sError: invalid patch structure%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			parts := strings.Split(oldAddress, "/")
+			if len(parts) != 2 {
+				fmt.Printf("%sError: invalid address format in base patch%s\n", colorRed, colorReset)
+				os.Exit(1)
+			}
+
+			netmask := parts[1]
+			newAddressWithMask := fmt.Sprintf("%s/%s", address, netmask)
+
+			addresses[0] = newAddressWithMask
+			interfaceMap["addresses"] = addresses
+
+			if nodeType == "cp" {
+				network["hostname"] = fmt.Sprintf("cp-%d", nodeNum)
+			} else {
+				network["hostname"] = fmt.Sprintf("worker-%d", nodeNum)
+			}
+
+			fileWriteYAML(newPatchFile, patchData)
+			fmt.Printf("%sCreated patch file: %s%s\n", colorGreen, newPatchFile, colorReset)
+
+			if err := os.Chdir(configDir); err != nil {
+				fmt.Printf("%sError changing directory: %v%s\n", colorRed, err, colorReset)
+				os.Exit(1)
+			}
+
+			baseYamlName := filepath.Base(baseYamlFile)
+			patchName := fmt.Sprintf("@%s", filepath.Base(newPatchFile))
+			outputName := filepath.Base(newYamlFile)
+
+			if err := runCmd("talosctl", "machineconfig", "patch", baseYamlName, "--patch", patchName, "--output", outputName); err != nil {
+				fmt.Printf("%sError patching config: %v%s\n", colorRed, err, colorReset)
+				os.Exit(1)
+			}
+			fmt.Printf("%sCreated config file: %s%s\n", colorGreen, newYamlFile, colorReset)
+
+			if autoApply {
+				if !askYesNoNumbered(fmt.Sprintf("Apply configuration to node %s? (Y/n)", address), "y") {
+					fmt.Printf("%sConfiguration application cancelled by user.%s\n", colorYellow, colorReset)
+					os.Chdir("..")
+					return
+				}
+
+				configPath := filepath.Join(".", outputName)
+				if err := runCmd("talosctl", "apply-config", "--insecure", "-n", address, "--file", configPath); err != nil {
+					fmt.Printf("%sError applying config: %v%s\n", colorRed, err, colorReset)
+					fullConfigPath := filepath.Join(configDir, outputName)
+					fmt.Printf("%sYou can apply configuration manually with command:%s\n", colorYellow, colorReset)
+					fmt.Printf("talosctl apply-config --insecure -n %s --file %s\n", address, fullConfigPath)
+					os.Chdir("..")
+					os.Exit(1)
+				}
+				fmt.Printf("%sConfiguration applied successfully to %s%s\n", colorGreen, address, colorReset)
+			}
+
+			os.Chdir("..")
+		},
+	}
+
+	cmd.Flags().IntVar(&cpNum, "cp", 0, "Control plane node number")
+	cmd.Flags().IntVar(&workerNum, "worker", 0, "Worker node number")
+	cmd.Flags().StringVar(&address, "address", "", "IP address for the new node")
+	cmd.Flags().BoolVar(&autoApply, "auto-apply", false, "Automatically apply configuration to the node")
+	return cmd
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "talostpl",
@@ -907,6 +1107,7 @@ func main() {
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate("talostpl version {{.Version}}\n")
 	rootCmd.AddCommand(generateCmd())
+	rootCmd.AddCommand(addCmd())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
