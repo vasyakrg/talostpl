@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.12.2"
 	k8sVersion string = "1.35.0"
 	configDir  string = "config"
-	version    = "v1.3.1"
+	version    = "v1.3.2"
 )
 
 const (
