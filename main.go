@@ -2,25 +2,25 @@ package main
 
 import (
 	"bufio"
-	"fmt"
-	"os"
-	"strings"
-	"strconv"
-	"path/filepath"
-	"os/exec"
-	"runtime"
-	"net/http"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.11.5"
-	k8sVersion string = "1.34.1"
+	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.12.2"
+	k8sVersion string = "1.35.0"
 	configDir  string = "config"
-	version    = "v1.2.2"
+	version    = "1.3.1"
 )
 
 const (
@@ -34,6 +34,36 @@ const (
 type PatchConfig struct {
 	Machine map[string]interface{} `yaml:"machine,omitempty"`
 	Cluster map[string]interface{} `yaml:"cluster,omitempty"`
+}
+
+// extractTalosVersion извлекает версию Talos из строки образа
+// Примеры: "factory.talos.dev/...:v1.12.2" -> "1.12.2"
+//
+//	"git.realmanual.ru/pub/talos:v1.12.2" -> "1.12.2"
+func extractTalosVersion(image string) string {
+	parts := strings.Split(image, ":")
+	if len(parts) < 2 {
+		return ""
+	}
+	version := parts[len(parts)-1]
+	return strings.TrimPrefix(version, "v")
+}
+
+// isTalos112OrNewer проверяет, является ли версия >= 1.12.0
+func isTalos112OrNewer(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	return major > 1 || (major == 1 && minor >= 12)
 }
 
 type Answers struct {
@@ -229,6 +259,33 @@ func fileWriteYAML(path string, data interface{}) {
 	}
 }
 
+// fileWriteYAMLWithHostname записывает YAML с дополнительным документом HostnameConfig (для Talos >= 1.12)
+func fileWriteYAMLWithHostname(path string, data interface{}, hostname string) {
+	f, err := os.Create(path)
+	if err != nil {
+		fmt.Printf("%sError creating file %s: %v%s\n", colorRed, path, err, colorReset)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	enc := yaml.NewEncoder(f)
+	enc.SetIndent(2)
+	if err := enc.Encode(data); err != nil {
+		fmt.Printf("%sError writing YAML: %v%s\n", colorRed, err, colorReset)
+		os.Exit(1)
+	}
+
+	hostnameDoc := map[string]interface{}{
+		"apiVersion": "v1alpha1",
+		"kind":       "HostnameConfig",
+		"hostname":   hostname,
+	}
+	if err := enc.Encode(hostnameDoc); err != nil {
+		fmt.Printf("%sError writing HostnameConfig: %v%s\n", colorRed, err, colorReset)
+		os.Exit(1)
+	}
+}
+
 func runCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
@@ -263,6 +320,10 @@ func clearDir(dir string) error {
 
 func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []string, isFromFile bool) {
 	configDir := configDir
+
+	// Определяем версию Talos для выбора формата hostname
+	talosVersion := extractTalosVersion(ans.Image)
+	useNewHostnameFormat := isTalos112OrNewer(talosVersion)
 
 	patch := PatchConfig{
 		Machine: map[string]interface{}{
@@ -302,29 +363,29 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			{"name": "dm-thin-pool"},
 		}
 		if ans.UseZFS {
-			mods = append(mods, map[string]interface{}{ "name": "zfs" })
+			mods = append(mods, map[string]interface{}{"name": "zfs"})
 		}
 		if ans.UseSPL {
-			mods = append(mods, map[string]interface{}{ "name": "spl" })
+			mods = append(mods, map[string]interface{}{"name": "spl"})
 		}
 		if ans.UseVFIOPCI {
-			mods = append(mods, map[string]interface{}{ "name": "vfio_pci" })
+			mods = append(mods, map[string]interface{}{"name": "vfio_pci"})
 		}
 		if ans.UseVFIOIOMMU {
-			mods = append(mods, map[string]interface{}{ "name": "vfio_iommu_type1" })
+			mods = append(mods, map[string]interface{}{"name": "vfio_iommu_type1"})
 		}
 		if ans.UseOVS {
-			mods = append(mods, map[string]interface{}{ "name": "openvswitch" })
+			mods = append(mods, map[string]interface{}{"name": "openvswitch"})
 		}
-		patch.Machine["kernel"] = map[string]interface{}{ "modules": mods }
+		patch.Machine["kernel"] = map[string]interface{}{"modules": mods}
 	}
 	if ans.WorkerCount == 0 {
 		patch.Cluster["allowSchedulingOnControlPlanes"] = true
 	}
 	patch.Cluster["network"] = map[string]interface{}{
-		"cni": map[string]interface{}{ "name": "none" },
+		"cni": map[string]interface{}{"name": "none"},
 	}
-	patch.Cluster["proxy"] = map[string]interface{}{ "disabled": true }
+	patch.Cluster["proxy"] = map[string]interface{}{"disabled": true}
 
 	// Формируем SAN'ы для cluster.apiServer.certSANs
 	var certSANs []string
@@ -368,32 +429,62 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 	}
 	for i, cpIP := range cpIPs {
 		filename := filepath.Join(configDir, fmt.Sprintf("cp%d.patch", i+1))
-		patch := map[string]interface{}{
-			"machine": map[string]interface{}{
-				"network": map[string]interface{}{
-					"hostname": fmt.Sprintf("cp-%d", i+1),
-					"interfaces": []map[string]interface{}{
-						{
-							"interface": ans.Iface,
-							"dhcp": false,
-							"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
-							"routes": []map[string]interface{}{
-								{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+		hostname := fmt.Sprintf("cp-%d", i+1)
+
+		var cpPatch map[string]interface{}
+		if useNewHostnameFormat {
+			// Talos >= 1.12: hostname в отдельном документе HostnameConfig
+			cpPatch = map[string]interface{}{
+				"machine": map[string]interface{}{
+					"network": map[string]interface{}{
+						"interfaces": []map[string]interface{}{
+							{
+								"interface": ans.Iface,
+								"dhcp":      false,
+								"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
+								"routes": []map[string]interface{}{
+									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+								},
 							},
 						},
 					},
 				},
-			},
-		}
-		if ans.UseVIP && ans.VIPIP != "" {
-			patch["machine"].(map[string]interface{})["network"].(map[string]interface{})["interfaces"].([]map[string]interface{})[0]["vip"] = map[string]interface{}{ "ip": ans.VIPIP }
-		}
-		if ans.UseMaxPods {
-			patch["machine"].(map[string]interface{})["kubelet"] = map[string]interface{}{
-				"extraConfig": map[string]interface{}{ "maxPods": 512 },
+			}
+		} else {
+			// Talos < 1.12: hostname в machine.network.hostname
+			cpPatch = map[string]interface{}{
+				"machine": map[string]interface{}{
+					"network": map[string]interface{}{
+						"hostname": hostname,
+						"interfaces": []map[string]interface{}{
+							{
+								"interface": ans.Iface,
+								"dhcp":      false,
+								"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
+								"routes": []map[string]interface{}{
+									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+								},
+							},
+						},
+					},
+				},
 			}
 		}
-		fileWriteYAML(filename, patch)
+
+		if ans.UseVIP && ans.VIPIP != "" {
+			cpPatch["machine"].(map[string]interface{})["network"].(map[string]interface{})["interfaces"].([]map[string]interface{})[0]["vip"] = map[string]interface{}{"ip": ans.VIPIP}
+		}
+		if ans.UseMaxPods {
+			cpPatch["machine"].(map[string]interface{})["kubelet"] = map[string]interface{}{
+				"extraConfig": map[string]interface{}{"maxPods": 512},
+			}
+		}
+
+		if useNewHostnameFormat {
+			fileWriteYAMLWithHostname(filename, cpPatch, hostname)
+		} else {
+			fileWriteYAML(filename, cpPatch)
+		}
 		fmt.Printf("%sCreated file: %s%s\n", colorGreen, filename, colorReset)
 	}
 	fmt.Println("--------------------------------")
@@ -419,23 +510,48 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 	}
 	for i, workerIP := range workerIPs {
 		filename := filepath.Join(configDir, fmt.Sprintf("worker%d.patch", i+1))
-		patch := map[string]interface{}{
-			"machine": map[string]interface{}{
-				"network": map[string]interface{}{
-					"hostname": fmt.Sprintf("worker-%d", i+1),
-					"interfaces": []map[string]interface{}{
-						{
-							"deviceSelector": map[string]interface{}{ "physical": true },
-							"dhcp": false,
-							"addresses": []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
-							"routes": []map[string]interface{}{
-								{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+		hostname := fmt.Sprintf("worker-%d", i+1)
+
+		var workerPatch map[string]interface{}
+		if useNewHostnameFormat {
+			// Talos >= 1.12: hostname в отдельном документе HostnameConfig
+			workerPatch = map[string]interface{}{
+				"machine": map[string]interface{}{
+					"network": map[string]interface{}{
+						"interfaces": []map[string]interface{}{
+							{
+								"deviceSelector": map[string]interface{}{"physical": true},
+								"dhcp":           false,
+								"addresses":      []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
+								"routes": []map[string]interface{}{
+									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+								},
 							},
 						},
 					},
 				},
-			},
+			}
+		} else {
+			// Talos < 1.12: hostname в machine.network.hostname
+			workerPatch = map[string]interface{}{
+				"machine": map[string]interface{}{
+					"network": map[string]interface{}{
+						"hostname": hostname,
+						"interfaces": []map[string]interface{}{
+							{
+								"deviceSelector": map[string]interface{}{"physical": true},
+								"dhcp":           false,
+								"addresses":      []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
+								"routes": []map[string]interface{}{
+									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
+								},
+							},
+						},
+					},
+				},
+			}
 		}
+
 		if ans.UseDRBD {
 			mods := []map[string]interface{}{
 				{"name": "drbd", "parameters": []string{"usermode_helper=disabled"}},
@@ -443,23 +559,28 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 				{"name": "dm-thin-pool"},
 			}
 			if ans.UseZFS {
-				mods = append(mods, map[string]interface{}{ "name": "zfs" })
+				mods = append(mods, map[string]interface{}{"name": "zfs"})
 			}
 			if ans.UseSPL {
-				mods = append(mods, map[string]interface{}{ "name": "spl" })
+				mods = append(mods, map[string]interface{}{"name": "spl"})
 			}
 			if ans.UseVFIOPCI {
-				mods = append(mods, map[string]interface{}{ "name": "vfio_pci" })
+				mods = append(mods, map[string]interface{}{"name": "vfio_pci"})
 			}
 			if ans.UseVFIOIOMMU {
-				mods = append(mods, map[string]interface{}{ "name": "vfio_iommu_type1" })
+				mods = append(mods, map[string]interface{}{"name": "vfio_iommu_type1"})
 			}
 			if ans.UseOVS {
-				mods = append(mods, map[string]interface{}{ "name": "openvswitch" })
+				mods = append(mods, map[string]interface{}{"name": "openvswitch"})
 			}
-			patch["machine"].(map[string]interface{})["kernel"] = map[string]interface{}{ "modules": mods }
+			workerPatch["machine"].(map[string]interface{})["kernel"] = map[string]interface{}{"modules": mods}
 		}
-		fileWriteYAML(filename, patch)
+
+		if useNewHostnameFormat {
+			fileWriteYAMLWithHostname(filename, workerPatch, hostname)
+		} else {
+			fileWriteYAML(filename, workerPatch)
+		}
 		fmt.Printf("%sCreated file: %s%s\n", colorGreen, filename, colorReset)
 	}
 	fmt.Println("--------------------------------")
@@ -547,34 +668,34 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		return
 	}
 	input := FileInput{
-		ClusterName: ans.ClusterName,
-		K8sVersion: ans.K8sVersion,
-		Image: ans.Image,
-		Iface: ans.Iface,
-		CPCount: ans.CPCount,
-		WorkerCount: ans.WorkerCount,
-		Gateway: ans.Gateway,
-		Netmask: ans.Netmask,
-		DNS1: ans.DNS1,
-		DNS2: ans.DNS2,
-		NTP1: ans.NTP1,
-		NTP2: ans.NTP2,
-		NTP3: ans.NTP3,
-		UseVIP: ans.UseVIP,
-		VIPIP: ans.VIPIP,
+		ClusterName:    ans.ClusterName,
+		K8sVersion:     ans.K8sVersion,
+		Image:          ans.Image,
+		Iface:          ans.Iface,
+		CPCount:        ans.CPCount,
+		WorkerCount:    ans.WorkerCount,
+		Gateway:        ans.Gateway,
+		Netmask:        ans.Netmask,
+		DNS1:           ans.DNS1,
+		DNS2:           ans.DNS2,
+		NTP1:           ans.NTP1,
+		NTP2:           ans.NTP2,
+		NTP3:           ans.NTP3,
+		UseVIP:         ans.UseVIP,
+		VIPIP:          ans.VIPIP,
 		UseExtBalancer: ans.UseExtBalancer,
-		ExtBalancerIP: ans.ExtBalancerIP,
-		Disk: ans.Disk,
-		UseDRBD: ans.UseDRBD,
-		UseZFS: ans.UseZFS,
-		UseSPL: ans.UseSPL,
-		UseVFIOPCI: ans.UseVFIOPCI,
-		UseVFIOIOMMU: ans.UseVFIOIOMMU,
-		UseOVS: ans.UseOVS,
-		UseMirrors: ans.UseMirrors,
-		UseMaxPods: ans.UseMaxPods,
-		CPIPs: cpIPs,
-		WorkerIPs: workerIPs,
+		ExtBalancerIP:  ans.ExtBalancerIP,
+		Disk:           ans.Disk,
+		UseDRBD:        ans.UseDRBD,
+		UseZFS:         ans.UseZFS,
+		UseSPL:         ans.UseSPL,
+		UseVFIOPCI:     ans.UseVFIOPCI,
+		UseVFIOIOMMU:   ans.UseVFIOIOMMU,
+		UseOVS:         ans.UseOVS,
+		UseMirrors:     ans.UseMirrors,
+		UseMaxPods:     ans.UseMaxPods,
+		CPIPs:          cpIPs,
+		WorkerIPs:      workerIPs,
 	}
 	fileWriteYAML("cluster.yaml", input)
 
@@ -980,6 +1101,25 @@ func addCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			// Определяем версию Talos из patch.yaml
+			patchYamlFile := filepath.Join(configDir, "patch.yaml")
+			var useNewHostnameFormat bool
+			if pf, err := os.Open(patchYamlFile); err == nil {
+				var patchYamlData map[string]interface{}
+				dec := yaml.NewDecoder(pf)
+				if err := dec.Decode(&patchYamlData); err == nil {
+					if machine, ok := patchYamlData["machine"].(map[string]interface{}); ok {
+						if install, ok := machine["install"].(map[string]interface{}); ok {
+							if img, ok := install["image"].(string); ok {
+								talosVersion := extractTalosVersion(img)
+								useNewHostnameFormat = isTalos112OrNewer(talosVersion)
+							}
+						}
+					}
+				}
+				pf.Close()
+			}
+
 			f, err := os.Open(basePatchFile)
 			if err != nil {
 				fmt.Printf("%sError reading base patch file: %v%s\n", colorRed, err, colorReset)
@@ -1042,13 +1182,22 @@ func addCmd() *cobra.Command {
 			addresses[0] = newAddressWithMask
 			interfaceMap["addresses"] = addresses
 
+			var hostname string
 			if nodeType == "cp" {
-				network["hostname"] = fmt.Sprintf("cp-%d", nodeNum)
+				hostname = fmt.Sprintf("cp-%d", nodeNum)
 			} else {
-				network["hostname"] = fmt.Sprintf("worker-%d", nodeNum)
+				hostname = fmt.Sprintf("worker-%d", nodeNum)
 			}
 
-			fileWriteYAML(newPatchFile, patchData)
+			if useNewHostnameFormat {
+				// Talos >= 1.12: hostname в отдельном документе, удаляем из network если был
+				delete(network, "hostname")
+				fileWriteYAMLWithHostname(newPatchFile, patchData, hostname)
+			} else {
+				// Talos < 1.12: hostname в machine.network.hostname
+				network["hostname"] = hostname
+				fileWriteYAML(newPatchFile, patchData)
+			}
 			fmt.Printf("%sCreated patch file: %s%s\n", colorGreen, newPatchFile, colorReset)
 
 			if err := os.Chdir(configDir); err != nil {
