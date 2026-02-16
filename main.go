@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.12.2"
+	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.12.4"
 	k8sVersion string = "1.35.0"
 	configDir  string = "config"
-	version    = "v1.3.2"
+	version    = "v1.4.1"
 )
 
 const (
@@ -284,6 +284,30 @@ func fileWriteYAMLWithHostname(path string, data interface{}, hostname string) {
 		fmt.Printf("%sError writing HostnameConfig: %v%s\n", colorRed, err, colorReset)
 		os.Exit(1)
 	}
+}
+
+// removeHostnameConfigFromFile removes the HostnameConfig document from a multi-document YAML file.
+func removeHostnameConfigFromFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	docs := strings.Split(string(data), "---\n")
+	var filtered []string
+	for _, doc := range docs {
+		trimmed := strings.TrimSpace(doc)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(trimmed, "kind: HostnameConfig") {
+			continue
+		}
+		filtered = append(filtered, doc)
+	}
+
+	result := strings.Join(filtered, "---\n")
+	return os.WriteFile(path, []byte(result), 0644)
 }
 
 func runCmd(name string, args ...string) error {
@@ -607,6 +631,16 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		os.Exit(1)
 	}
 	fmt.Println("--------------------------------")
+
+	// Remove auto: stable HostnameConfig from generated configs for Talos >= 1.12
+	if useNewHostnameFormat {
+		for _, baseFile := range []string{"controlplane.yaml", "worker.yaml"} {
+			if err := removeHostnameConfigFromFile(baseFile); err != nil {
+				fmt.Printf("%sError removing HostnameConfig from %s: %v%s\n", colorRed, baseFile, err, colorReset)
+				os.Exit(1)
+			}
+		}
+	}
 
 	for i := 1; i <= ans.CPCount; i++ {
 		if err := runCmd("talosctl", "machineconfig", "patch", "controlplane.yaml", "--patch", fmt.Sprintf("@cp%d.patch", i), "--output", fmt.Sprintf("cp%d.yaml", i)); err != nil {
