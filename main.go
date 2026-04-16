@@ -20,7 +20,7 @@ var (
 	image      string = "factory.talos.dev/nocloud-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.12.4"
 	k8sVersion string = "1.35.0"
 	configDir  string = "config"
-	version    = "v1.4.1"
+	version    = "v1.1.9"
 )
 
 const (
@@ -124,6 +124,77 @@ type FileInput struct {
 	UseMaxPods     bool     `yaml:"useMaxPods"`
 	CPIPs          []string `yaml:"cpIPs"`
 	WorkerIPs      []string `yaml:"workerIPs"`
+}
+
+// getTalosctlVersion возвращает версию клиента talosctl без префикса 'v' (например, "1.12.4")
+func getTalosctlVersion() (string, error) {
+	out, err := exec.Command("talosctl", "version", "--client", "--short").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		idx := strings.Index(line, "v")
+		if idx == -1 {
+			continue
+		}
+		ver := line[idx+1:]
+		ver = strings.Fields(ver)[0]
+		if _, err := strconv.Atoi(strings.Split(ver, ".")[0]); err == nil {
+			return ver, nil
+		}
+	}
+	return "", fmt.Errorf("cannot parse talosctl version output: %s", string(out))
+}
+
+// checkTalosctlCompatibility проверяет, что версия talosctl не ниже версии образа Talos.
+// Это критично, начиная с Talos 1.12, где появился HostnameConfig v1alpha1: старый
+// talosctl не знает этот тип и падает с ошибкой "HostnameConfig" "v1alpha1": not registered.
+func checkTalosctlCompatibility(imageVersion string) error {
+	if imageVersion == "" {
+		return nil
+	}
+	clientVersion, err := getTalosctlVersion()
+	if err != nil {
+		fmt.Printf("%s⚠️  Cannot detect talosctl version: %v%s\n", colorYellow, err, colorReset)
+		return nil
+	}
+	if compareVersions(clientVersion, imageVersion) < 0 {
+		fmt.Printf("%s❌ talosctl version (%s) is older than Talos image version (%s).%s\n", colorRed, clientVersion, imageVersion, colorReset)
+		fmt.Printf("%s   Resources like HostnameConfig (v1alpha1) introduced in Talos 1.12 require matching talosctl.%s\n", colorRed, colorReset)
+		fmt.Println("\n📋 Update talosctl:")
+		switch runtime.GOOS {
+		case "linux":
+			fmt.Println("   curl -sL https://talos.dev/install | sh")
+		case "darwin":
+			fmt.Println("   brew upgrade siderolabs/tap/talosctl")
+		}
+		return fmt.Errorf("talosctl %s is too old for Talos %s", clientVersion, imageVersion)
+	}
+	return nil
+}
+
+// compareVersions сравнивает два semver-подобных значения ("1.12.4" vs "1.11.0").
+// Возвращает -1, 0, 1.
+func compareVersions(a, b string) int {
+	pa := strings.Split(a, ".")
+	pb := strings.Split(b, ".")
+	for i := 0; i < 3; i++ {
+		var ai, bi int
+		if i < len(pa) {
+			ai, _ = strconv.Atoi(pa[i])
+		}
+		if i < len(pb) {
+			bi, _ = strconv.Atoi(pb[i])
+		}
+		if ai < bi {
+			return -1
+		}
+		if ai > bi {
+			return 1
+		}
+	}
+	return 0
 }
 
 func checkRequiredTools() error {
@@ -348,6 +419,10 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 	// Определяем версию Talos для выбора формата hostname
 	talosVersion := extractTalosVersion(ans.Image)
 	useNewHostnameFormat := isTalos112OrNewer(talosVersion)
+
+	if err := checkTalosctlCompatibility(talosVersion); err != nil {
+		os.Exit(1)
+	}
 
 	patch := PatchConfig{
 		Machine: map[string]interface{}{
@@ -1138,6 +1213,7 @@ func addCmd() *cobra.Command {
 			// Определяем версию Talos из patch.yaml
 			patchYamlFile := filepath.Join(configDir, "patch.yaml")
 			var useNewHostnameFormat bool
+			var detectedTalosVersion string
 			if pf, err := os.Open(patchYamlFile); err == nil {
 				var patchYamlData map[string]interface{}
 				dec := yaml.NewDecoder(pf)
@@ -1145,13 +1221,17 @@ func addCmd() *cobra.Command {
 					if machine, ok := patchYamlData["machine"].(map[string]interface{}); ok {
 						if install, ok := machine["install"].(map[string]interface{}); ok {
 							if img, ok := install["image"].(string); ok {
-								talosVersion := extractTalosVersion(img)
-								useNewHostnameFormat = isTalos112OrNewer(talosVersion)
+								detectedTalosVersion = extractTalosVersion(img)
+								useNewHostnameFormat = isTalos112OrNewer(detectedTalosVersion)
 							}
 						}
 					}
 				}
 				pf.Close()
+			}
+
+			if err := checkTalosctlCompatibility(detectedTalosVersion); err != nil {
+				os.Exit(1)
 			}
 
 			f, err := os.Open(basePatchFile)
