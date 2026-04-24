@@ -98,7 +98,7 @@ type Answers struct {
 type FileInput struct {
 	ClusterName    string   `yaml:"clusterName"`
 	K8sVersion     string   `yaml:"k8sVersion"`
-	Image          string   `yaml:"image"`
+	Image          string   `yaml:"image,omitempty"`
 	Iface          string   `yaml:"iface"`
 	CPCount        int      `yaml:"cpCount"`
 	WorkerCount    int      `yaml:"workerCount"`
@@ -429,10 +429,13 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			"network": map[string]interface{}{
 				"nameservers": []string{ans.DNS1, ans.DNS2},
 			},
-			"install": map[string]interface{}{
-				"disk":  ans.Disk,
-				"image": ans.Image,
-			},
+			"install": func() map[string]interface{} {
+				install := map[string]interface{}{"disk": ans.Disk}
+				if ans.Image != "" {
+					install["image"] = ans.Image
+				}
+				return install
+			}(),
 			"time": map[string]interface{}{
 				"servers": []string{ans.NTP1, ans.NTP2, ans.NTP3},
 			},
