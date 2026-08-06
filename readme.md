@@ -153,4 +153,4 @@ Add new node using custom configuration directory:
 
 [Yegorov Vassiliy](https://egorovanet.ru)
 
-(C) 2025
+(C) 2026

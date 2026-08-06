@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	image      string = "factory.talos.dev/nocloud-installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:v1.12.6"
-	k8sVersion string = "1.35.2"
+	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.13.8"
+	k8sVersion string = "1.36.2"
 	configDir  string = "config"
-	version    = "v1.4.3"
+	version    = "v1.5.1"
 )
 
 const (
@@ -94,6 +94,7 @@ type Answers struct {
 	UseOVS         bool
 	UseMirrors     bool
 	UseMaxPods     bool
+	UseSpegel      bool
 }
 
 type FileInput struct {
@@ -124,6 +125,7 @@ type FileInput struct {
 	UseOVS         bool     `yaml:"useOVS"`
 	UseMirrors     bool     `yaml:"useMirrors"`
 	UseMaxPods     bool     `yaml:"useMaxPods"`
+	UseSpegel      bool     `yaml:"useSpegel"`
 	CPIPs          []string `yaml:"cpIPs"`
 	WorkerIPs      []string `yaml:"workerIPs"`
 }
@@ -527,8 +529,17 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			mods = append(mods, map[string]interface{}{"name": "openvswitch"})
 		}
 		patch.Machine["kernel"] = map[string]interface{}{"modules": mods}
-	}
-	if ans.WorkerCount == 0 {
+		}
+		if ans.UseSpegel {
+			patch.Machine["files"] = []map[string]interface{}{
+				{
+					"path":    "/etc/cri/conf.d/20-customization.part",
+					"op":      "create",
+					"content": "[plugins.\"io.containerd.cri.v1.images\"]\n  discard_unpacked_layers = false\n",
+				},
+			}
+		}
+		if ans.WorkerCount == 0 {
 		patch.Cluster["allowSchedulingOnControlPlanes"] = true
 	}
 	patch.Cluster["network"] = map[string]interface{}{
@@ -865,9 +876,10 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		UseVFIOPCI:     ans.UseVFIOPCI,
 		UseVFIOIOMMU:   ans.UseVFIOIOMMU,
 		UseOVS:         ans.UseOVS,
-		UseMirrors:     ans.UseMirrors,
-		UseMaxPods:     ans.UseMaxPods,
-		CPIPs:          cpIPs,
+			UseMirrors:     ans.UseMirrors,
+			UseMaxPods:     ans.UseMaxPods,
+			UseSpegel:      ans.UseSpegel,
+			CPIPs:          cpIPs,
 		WorkerIPs:      workerIPs,
 	}
 	fileWriteYAML("cluster.yaml", input)
@@ -1084,11 +1096,12 @@ func generateCmd() *cobra.Command {
 					UseSPL:         input.UseSPL,
 					UseVFIOPCI:     input.UseVFIOPCI,
 					UseVFIOIOMMU:   input.UseVFIOIOMMU,
-					UseOVS:         input.UseOVS,
-					UseMirrors:     input.UseMirrors,
-					UseMaxPods:     input.UseMaxPods,
-				}
-				usedIPs := map[string]struct{}{input.Gateway: {}}
+						UseOVS:         input.UseOVS,
+						UseMirrors:     input.UseMirrors,
+						UseMaxPods:     input.UseMaxPods,
+						UseSpegel:      input.UseSpegel,
+					}
+					usedIPs := map[string]struct{}{input.Gateway: {}}
 				for _, ip := range input.CPIPs {
 					usedIPs[ip] = struct{}{}
 				}
@@ -1145,8 +1158,9 @@ func generateCmd() *cobra.Command {
 			ans.UseVFIOIOMMU = askYesNoNumbered("Enable vfio_iommu_type1 support?", "n")
 			ans.UseOVS = askYesNoNumbered("Enable openvswitch support?", "n")
 			ans.UseMirrors = askYesNoNumbered("Use timeweb.cloud and gcr.io mirrors for docker.io?", "y")
-			ans.UseMaxPods = askYesNoNumbered("Set maxPods: 512 for kubelet? (default is 110 per node)", "n")
-			usedIPs := map[string]struct{}{ans.Gateway: {}}
+				ans.UseMaxPods = askYesNoNumbered("Set maxPods: 512 for kubelet? (default is 110 per node)", "n")
+				ans.UseSpegel = askYesNoNumbered("Enable spegel support (discard_unpacked_layers)?", "n")
+				usedIPs := map[string]struct{}{ans.Gateway: {}}
 			var cpIPs, workerIPs []string
 			for i := 1; i <= ans.CPCount; i++ {
 				var cpIP string
