@@ -1,5 +1,6 @@
 .DS_Store
 .claude
+.zcode
 distrib/*
 config/*
 release.sh
