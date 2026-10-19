@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.13.8"
-	k8sVersion string = "1.36.2"
+	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
+	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.5.1"
+	version    = "v1.6.0"
 )
 
 const (
@@ -49,21 +49,10 @@ func extractTalosVersion(image string) string {
 	return strings.TrimPrefix(version, "v")
 }
 
-// isTalos112OrNewer проверяет, является ли версия >= 1.12.0
-func isTalos112OrNewer(version string) bool {
-	parts := strings.Split(version, ".")
-	if len(parts) < 2 {
-		return false
-	}
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return false
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return false
-	}
-	return major > 1 || (major == 1 && minor >= 12)
+// isTalos114OrNewer проверяет, является ли версия >= 1.14.0
+// (с 1.14 конфигурация описывается отдельными документами вместо v1alpha1-полей).
+func isTalos114OrNewer(version string) bool {
+	return compareVersions(version, "1.14.0") >= 0
 }
 
 type Answers struct {
@@ -152,7 +141,7 @@ func getTalosctlVersion() (string, error) {
 }
 
 // checkTalosctlCompatibility проверяет, что версия talosctl не ниже версии образа Talos.
-// Это критично, начиная с Talos 1.12, где появился HostnameConfig v1alpha1: старый
+// Это критично, начиная с Talos 1.12+, где появился HostnameConfig v1alpha1: старый
 // talosctl не знает этот тип и падает с ошибкой "HostnameConfig" "v1alpha1": not registered.
 func checkTalosctlCompatibility(imageVersion string) error {
 	if imageVersion == "" {
@@ -334,8 +323,8 @@ func fileWriteYAML(path string, data interface{}) {
 	}
 }
 
-// fileWriteYAMLWithHostname записывает YAML с дополнительным документом HostnameConfig (для Talos >= 1.12)
-func fileWriteYAMLWithHostname(path string, data interface{}, hostname string) {
+// fileWriteYAMLWithHostname записывает YAML с дополнительным документом HostnameConfig 
+func fileWriteYAMLWithHostname(path string, data interface{}, hostname string, extraDocs ...interface{}) {
 	f, err := os.Create(path)
 	if err != nil {
 		fmt.Printf("%sError creating file %s: %v%s\n", colorRed, path, err, colorReset)
@@ -359,6 +348,128 @@ func fileWriteYAMLWithHostname(path string, data interface{}, hostname string) {
 		fmt.Printf("%sError writing HostnameConfig: %v%s\n", colorRed, err, colorReset)
 		os.Exit(1)
 	}
+	for _, d := range extraDocs {
+		if err := enc.Encode(d); err != nil {
+			fmt.Printf("%sError writing YAML: %v%s\n", colorRed, err, colorReset)
+			os.Exit(1)
+		}
+	}
+}
+
+// fileWriteYAMLDocs записывает несколько YAML-документов подряд.
+func fileWriteYAMLDocs(path string, docs ...interface{}) {
+	f, err := os.Create(path)
+	if err != nil {
+		fmt.Printf("%sError creating file %s: %v%s\n", colorRed, path, err, colorReset)
+		os.Exit(1)
+	}
+	defer f.Close()
+	enc := yaml.NewEncoder(f)
+	enc.SetIndent(2)
+	for _, d := range docs {
+		if err := enc.Encode(d); err != nil {
+			fmt.Printf("%sError writing YAML: %v%s\n", colorRed, err, colorReset)
+			os.Exit(1)
+		}
+	}
+}
+
+// migratePatchToDocuments (Talos >= 1.14) переносит устаревшие v1alpha1-поля патча
+// в отдельные документы конфигурации и возвращает эти документы.
+// Перенесённые поля удаляются из patch, иначе talosctl validate падает на конфликте.
+func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
+	var docs []interface{}
+	doc := func(kind string, fields map[string]interface{}) {
+		d := map[string]interface{}{"apiVersion": "v1alpha1", "kind": kind}
+		for k, v := range fields {
+			d[k] = v
+		}
+		docs = append(docs, d)
+	}
+
+	// machine.network.nameservers -> ResolverConfig
+	if network, ok := patch.Machine["network"].(map[string]interface{}); ok {
+		if ns, ok := network["nameservers"].([]string); ok {
+			var servers []map[string]interface{}
+			for _, a := range ns {
+				servers = append(servers, map[string]interface{}{"address": a})
+			}
+			doc("ResolverConfig", map[string]interface{}{"nameservers": servers})
+			delete(network, "nameservers")
+		}
+		if len(network) == 0 {
+			delete(patch.Machine, "network")
+		}
+	}
+
+	// machine.install -> UnattendedInstallConfig
+	if install, ok := patch.Machine["install"].(map[string]interface{}); ok {
+		fields := map[string]interface{}{
+			"provisioning": map[string]interface{}{
+				"diskSelector": map[string]interface{}{
+					"match": fmt.Sprintf("disk.dev_path == %q", install["disk"]),
+				},
+			},
+		}
+		if img, ok := install["image"].(string); ok && img != "" {
+			fields["installer"] = map[string]interface{}{"image": img}
+		}
+		doc("UnattendedInstallConfig", fields)
+		delete(patch.Machine, "install")
+	}
+
+	// machine.time -> TimeSyncConfig
+	if t, ok := patch.Machine["time"].(map[string]interface{}); ok {
+		doc("TimeSyncConfig", map[string]interface{}{"ntp": map[string]interface{}{"servers": t["servers"]}})
+		delete(patch.Machine, "time")
+	}
+
+	// machine.registries.mirrors -> RegistryMirrorConfig
+	if reg, ok := patch.Machine["registries"].(map[string]interface{}); ok {
+		if mirrors, ok := reg["mirrors"].(map[string]interface{}); ok {
+			for name, m := range mirrors {
+				var eps []map[string]interface{}
+				for _, u := range m.(map[string]interface{})["endpoints"].([]string) {
+					eps = append(eps, map[string]interface{}{"url": u})
+				}
+				doc("RegistryMirrorConfig", map[string]interface{}{"name": name, "endpoints": eps})
+			}
+		}
+		delete(patch.Machine, "registries")
+	}
+
+	// machine.files (spegel) -> CRICustomizationConfig
+	if ans.UseSpegel {
+		doc("CRICustomizationConfig", map[string]interface{}{
+			"name":    "spegel",
+			"content": "[plugins.\"io.containerd.cri.v1.images\"]\n  discard_unpacked_layers = false\n",
+		})
+		delete(patch.Machine, "files")
+	}
+
+	// cluster.network (cni: none) и cluster.proxy (disabled) -> удаление документов
+	// KubeFlannelCNIConfig и KubeProxyConfig (под Cilium без kube-proxy)
+	doc("KubeFlannelCNIConfig", map[string]interface{}{"$patch": "delete"})
+	doc("KubeProxyConfig", map[string]interface{}{"$patch": "delete"})
+	delete(patch.Cluster, "network")
+	delete(patch.Cluster, "proxy")
+
+	// cluster.allowSchedulingOnControlPlanes устарел: taint снимается в KubeNodeConfig
+	// control plane узлов (см. cp*.patch), т.к. в worker-конфиге этого taint нет.
+	delete(patch.Cluster, "allowSchedulingOnControlPlanes")
+
+	// cluster.apiServer.certSANs -> KubeAPIServerConfig.certExtraSANs
+	if api, ok := patch.Cluster["apiServer"].(map[string]interface{}); ok {
+		if sans, ok := api["certSANs"]; ok {
+			doc("KubeAPIServerConfig", map[string]interface{}{"certExtraSANs": sans})
+			delete(api, "certSANs")
+		}
+		if len(api) == 0 {
+			delete(patch.Cluster, "apiServer")
+		}
+	}
+
+	return docs
 }
 
 // removeInstallImageFromFile removes the `image:` line from the `install:` block in a YAML file.
@@ -378,7 +489,7 @@ func removeInstallImageFromFile(path string) error {
 		trimmed := strings.TrimLeft(line, " ")
 		indent := len(line) - len(trimmed)
 		if !inInstall {
-			if strings.HasPrefix(trimmed, "install:") {
+			if strings.HasPrefix(trimmed, "install:") || strings.HasPrefix(trimmed, "installer:") {
 				inInstall = true
 				installIndent = indent
 				childIndent = -1
@@ -409,27 +520,45 @@ func removeInstallImageFromFile(path string) error {
 	return os.WriteFile(path, []byte(strings.Join(result, "\n")), 0644)
 }
 
-// removeHostnameConfigFromFile removes the HostnameConfig document from a multi-document YAML file.
+// removeHostnameConfigFromFile removes the auto-generated HostnameConfig document from a multi-document YAML file.
+func hasKind(doc, kind string) bool {
+	return strings.Contains(doc, "\nkind: "+kind+"\n") || strings.HasPrefix(doc, "kind: "+kind+"\n") ||
+		strings.HasSuffix(doc, "\nkind: "+kind)
+}
+
 func removeHostnameConfigFromFile(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	docs := strings.Split(string(data), "---\n")
+	// Разделитель документов — только строка, целиком равная "---"
+	// (подстрока "---\n" встречается и в конце PEM: "-----END EC PRIVATE KEY-----").
+	var docs [][]string
+	cur := []string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimRight(line, " \r") == "---" {
+			docs = append(docs, cur)
+			cur = []string{}
+			continue
+		}
+		cur = append(cur, line)
+	}
+	docs = append(docs, cur)
+
 	var filtered []string
 	for _, doc := range docs {
-		trimmed := strings.TrimSpace(doc)
-		if trimmed == "" {
+		text := strings.Join(doc, "\n")
+		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		if strings.Contains(trimmed, "kind: HostnameConfig") {
+		if hasKind(text, "HostnameConfig") {
 			continue
 		}
-		filtered = append(filtered, doc)
+		filtered = append(filtered, text)
 	}
 
-	result := strings.Join(filtered, "---\n")
+	result := strings.Join(filtered, "\n---\n")
 	return os.WriteFile(path, []byte(result), 0644)
 }
 
@@ -468,9 +597,7 @@ func clearDir(dir string) error {
 func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []string, isFromFile bool) {
 	configDir := configDir
 
-	// Определяем версию Talos для выбора формата hostname
 	talosVersion := extractTalosVersion(ans.Image)
-	useNewHostnameFormat := isTalos112OrNewer(talosVersion)
 
 	if err := checkTalosctlCompatibility(talosVersion); err != nil {
 		os.Exit(1)
@@ -564,7 +691,16 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		patch.Cluster["apiServer"].(map[string]interface{})["certSANs"] = certSANs
 	}
 
-	fileWriteYAML(filepath.Join(configDir, "patch.yaml"), patch)
+	patchDocs := []interface{}{patch}
+	if isTalos114OrNewer(talosVersion) {
+		migrated := migratePatchToDocuments(&patch, ans)
+		patchDocs = nil
+		if len(patch.Machine) > 0 || len(patch.Cluster) > 0 {
+			patchDocs = append(patchDocs, patch)
+		}
+		patchDocs = append(patchDocs, migrated...)
+	}
+	fileWriteYAMLDocs(filepath.Join(configDir, "patch.yaml"), patchDocs...)
 	fmt.Printf("%sCreated patch.yaml%s\n", colorGreen, colorReset)
 	fmt.Println("--------------------------------")
 
@@ -591,60 +727,52 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		filename := filepath.Join(configDir, fmt.Sprintf("cp%d.patch", i+1))
 		hostname := fmt.Sprintf("cp-%d", i+1)
 
-		var cpPatch map[string]interface{}
-		if useNewHostnameFormat {
-			// Talos >= 1.12: hostname в отдельном документе HostnameConfig
-			cpPatch = map[string]interface{}{
-				"machine": map[string]interface{}{
-					"network": map[string]interface{}{
-						"interfaces": []map[string]interface{}{
-							{
-								"interface": ans.Iface,
-								"dhcp":      false,
-								"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
-								"routes": []map[string]interface{}{
-									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
-								},
+		cpPatch := map[string]interface{}{
+			"machine": map[string]interface{}{
+				"network": map[string]interface{}{
+					"interfaces": []map[string]interface{}{
+						{
+							"interface": ans.Iface,
+							"dhcp":      false,
+							"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
+							"routes": []map[string]interface{}{
+								{"network": "0.0.0.0/0", "gateway": ans.Gateway},
 							},
 						},
 					},
 				},
-			}
-		} else {
-			// Talos < 1.12: hostname в machine.network.hostname
-			cpPatch = map[string]interface{}{
-				"machine": map[string]interface{}{
-					"network": map[string]interface{}{
-						"hostname": hostname,
-						"interfaces": []map[string]interface{}{
-							{
-								"interface": ans.Iface,
-								"dhcp":      false,
-								"addresses": []string{fmt.Sprintf("%s/%s", cpIP, ans.Netmask)},
-								"routes": []map[string]interface{}{
-									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
-								},
-							},
-						},
-					},
-				},
-			}
+			},
 		}
 
 		if ans.UseVIP && ans.VIPIP != "" {
 			cpPatch["machine"].(map[string]interface{})["network"].(map[string]interface{})["interfaces"].([]map[string]interface{})[0]["vip"] = map[string]interface{}{"ip": ans.VIPIP}
 		}
+		var cpExtraDocs []interface{}
+		if ans.WorkerCount == 0 && isTalos114OrNewer(talosVersion) {
+			cpExtraDocs = append(cpExtraDocs, map[string]interface{}{
+				"apiVersion": "v1alpha1",
+				"kind":       "KubeNodeConfig",
+				"taints": map[string]interface{}{
+					"node-role.kubernetes.io/control-plane": map[string]interface{}{"$patch": "delete"},
+				},
+			})
+		}
 		if ans.UseMaxPods {
-			cpPatch["machine"].(map[string]interface{})["kubelet"] = map[string]interface{}{
-				"extraConfig": map[string]interface{}{"maxPods": 512},
+			if isTalos114OrNewer(talosVersion) {
+				// Talos >= 1.14: machine.kubelet устарел, используется KubeletConfig
+				cpExtraDocs = append(cpExtraDocs, map[string]interface{}{
+					"apiVersion": "v1alpha1",
+					"kind":       "KubeletConfig",
+					"config":     map[string]interface{}{"maxPods": 512},
+				})
+			} else {
+				cpPatch["machine"].(map[string]interface{})["kubelet"] = map[string]interface{}{
+					"extraConfig": map[string]interface{}{"maxPods": 512},
+				}
 			}
 		}
 
-		if useNewHostnameFormat {
-			fileWriteYAMLWithHostname(filename, cpPatch, hostname)
-		} else {
-			fileWriteYAML(filename, cpPatch)
-		}
+		fileWriteYAMLWithHostname(filename, cpPatch, hostname, cpExtraDocs...)
 		fmt.Printf("%sCreated file: %s%s\n", colorGreen, filename, colorReset)
 	}
 	fmt.Println("--------------------------------")
@@ -672,44 +800,21 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		filename := filepath.Join(configDir, fmt.Sprintf("worker%d.patch", i+1))
 		hostname := fmt.Sprintf("worker-%d", i+1)
 
-		var workerPatch map[string]interface{}
-		if useNewHostnameFormat {
-			// Talos >= 1.12: hostname в отдельном документе HostnameConfig
-			workerPatch = map[string]interface{}{
-				"machine": map[string]interface{}{
-					"network": map[string]interface{}{
-						"interfaces": []map[string]interface{}{
-							{
-								"deviceSelector": map[string]interface{}{"physical": true},
-								"dhcp":           false,
-								"addresses":      []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
-								"routes": []map[string]interface{}{
-									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
-								},
+		workerPatch := map[string]interface{}{
+			"machine": map[string]interface{}{
+				"network": map[string]interface{}{
+					"interfaces": []map[string]interface{}{
+						{
+							"deviceSelector": map[string]interface{}{"physical": true},
+							"dhcp":           false,
+							"addresses":      []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
+							"routes": []map[string]interface{}{
+								{"network": "0.0.0.0/0", "gateway": ans.Gateway},
 							},
 						},
 					},
 				},
-			}
-		} else {
-			// Talos < 1.12: hostname в machine.network.hostname
-			workerPatch = map[string]interface{}{
-				"machine": map[string]interface{}{
-					"network": map[string]interface{}{
-						"hostname": hostname,
-						"interfaces": []map[string]interface{}{
-							{
-								"deviceSelector": map[string]interface{}{"physical": true},
-								"dhcp":           false,
-								"addresses":      []string{fmt.Sprintf("%s/%s", workerIP, ans.Netmask)},
-								"routes": []map[string]interface{}{
-									{"network": "0.0.0.0/0", "gateway": ans.Gateway},
-								},
-							},
-						},
-					},
-				},
-			}
+			},
 		}
 
 		if ans.UseDRBD {
@@ -736,11 +841,7 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			workerPatch["machine"].(map[string]interface{})["kernel"] = map[string]interface{}{"modules": mods}
 		}
 
-		if useNewHostnameFormat {
-			fileWriteYAMLWithHostname(filename, workerPatch, hostname)
-		} else {
-			fileWriteYAML(filename, workerPatch)
-		}
+		fileWriteYAMLWithHostname(filename, workerPatch, hostname)
 		fmt.Printf("%sCreated file: %s%s\n", colorGreen, filename, colorReset)
 	}
 	fmt.Println("--------------------------------")
@@ -762,19 +863,23 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		fmt.Printf("%sError changing directory: %v%s\n", colorRed, err, colorReset)
 		os.Exit(1)
 	}
-	if err := runCmd("talosctl", "gen", "config", "--kubernetes-version", ans.K8sVersion, "--with-secrets", "secrets.yaml", ans.ClusterName, fmt.Sprintf("https://%s:6443", endpointIP), "--config-patch", "@patch.yaml"); err != nil {
+	genArgs := []string{"gen", "config"}
+	if talosVersion != "" {
+		// Формат конфига должен соответствовать версии образа, а не версии talosctl
+		genArgs = append(genArgs, "--talos-version", "v"+talosVersion)
+	}
+	genArgs = append(genArgs, "--kubernetes-version", ans.K8sVersion, "--with-secrets", "secrets.yaml", ans.ClusterName, fmt.Sprintf("https://%s:6443", endpointIP), "--config-patch", "@patch.yaml")
+	if err := runCmd("talosctl", genArgs...); err != nil {
 		fmt.Printf("%sError generating config: %v%s\n", colorRed, err, colorReset)
 		os.Exit(1)
 	}
 	fmt.Println("--------------------------------")
 
-	// Remove auto: stable HostnameConfig from generated configs for Talos >= 1.12
-	if useNewHostnameFormat {
-		for _, baseFile := range []string{"controlplane.yaml", "worker.yaml"} {
-			if err := removeHostnameConfigFromFile(baseFile); err != nil {
-				fmt.Printf("%sError removing HostnameConfig from %s: %v%s\n", colorRed, baseFile, err, colorReset)
-				os.Exit(1)
-			}
+	// Remove auto: stable HostnameConfig from generated configs
+	for _, baseFile := range []string{"controlplane.yaml", "worker.yaml"} {
+		if err := removeHostnameConfigFromFile(baseFile); err != nil {
+			fmt.Printf("%sError removing HostnameConfig from %s: %v%s\n", colorRed, baseFile, err, colorReset)
+			os.Exit(1)
 		}
 	}
 
@@ -1292,17 +1397,28 @@ func addCmd() *cobra.Command {
 
 			// Определяем версию Talos из patch.yaml
 			patchYamlFile := filepath.Join(configDir, "patch.yaml")
-			var useNewHostnameFormat bool
 			var detectedTalosVersion string
 			if pf, err := os.Open(patchYamlFile); err == nil {
-				var patchYamlData map[string]interface{}
 				dec := yaml.NewDecoder(pf)
-				if err := dec.Decode(&patchYamlData); err == nil {
-					if machine, ok := patchYamlData["machine"].(map[string]interface{}); ok {
+				for {
+					var doc map[string]interface{}
+					if err := dec.Decode(&doc); err != nil {
+						break
+					}
+					// Talos >= 1.14: образ в UnattendedInstallConfig.installer.image
+					if doc["kind"] == "UnattendedInstallConfig" {
+						if inst, ok := doc["installer"].(map[string]interface{}); ok {
+							if img, ok := inst["image"].(string); ok {
+								detectedTalosVersion = extractTalosVersion(img)
+							}
+						}
+						continue
+					}
+					// Talos 1.12-1.13: образ в machine.install.image
+					if machine, ok := doc["machine"].(map[string]interface{}); ok {
 						if install, ok := machine["install"].(map[string]interface{}); ok {
 							if img, ok := install["image"].(string); ok {
 								detectedTalosVersion = extractTalosVersion(img)
-								useNewHostnameFormat = isTalos112OrNewer(detectedTalosVersion)
 							}
 						}
 					}
@@ -1326,6 +1442,19 @@ func addCmd() *cobra.Command {
 			if err := dec.Decode(&patchData); err != nil {
 				fmt.Printf("%sError parsing base patch file: %v%s\n", colorRed, err, colorReset)
 				os.Exit(1)
+			}
+			// Остальные документы патча (например, KubeletConfig) переносятся как есть,
+			// HostnameConfig пересоздаётся для нового узла.
+			var extraDocs []interface{}
+			for {
+				var extra map[string]interface{}
+				if err := dec.Decode(&extra); err != nil {
+					break
+				}
+				if extra["kind"] == "HostnameConfig" {
+					continue
+				}
+				extraDocs = append(extraDocs, extra)
 			}
 
 			machine, ok := patchData["machine"].(map[string]interface{})
@@ -1383,15 +1512,9 @@ func addCmd() *cobra.Command {
 				hostname = fmt.Sprintf("worker-%d", nodeNum)
 			}
 
-			if useNewHostnameFormat {
-				// Talos >= 1.12: hostname в отдельном документе, удаляем из network если был
-				delete(network, "hostname")
-				fileWriteYAMLWithHostname(newPatchFile, patchData, hostname)
-			} else {
-				// Talos < 1.12: hostname в machine.network.hostname
-				network["hostname"] = hostname
-				fileWriteYAML(newPatchFile, patchData)
-			}
+			// hostname в отдельном документе HostnameConfig
+			delete(network, "hostname")
+			fileWriteYAMLWithHostname(newPatchFile, patchData, hostname, extraDocs...)
 			fmt.Printf("%sCreated patch file: %s%s\n", colorGreen, newPatchFile, colorReset)
 
 			if err := os.Chdir(configDir); err != nil {

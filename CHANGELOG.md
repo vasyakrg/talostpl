@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.6.0
+
+- версия куба 1.37.1
+- версия talos 1.14.4
+- **поддерживаются только Talos >= 1.12.0**: обратная совместимость с версиями < 1.12.0 удалена (hostname всегда в документе HostnameConfig)
+- Talos >= 1.14: патч генерируется новыми документами (UnattendedInstallConfig, ResolverConfig, TimeSyncConfig, RegistryMirrorConfig, CRICustomizationConfig, KubeletConfig, KubeAPIServerConfig, удаление KubeFlannelCNIConfig/KubeProxyConfig), иначе `talosctl validate` падает на конфликте с v1alpha1-полями; для 1.12/1.13 формат прежний
+- `talosctl gen config` теперь вызывается с `--talos-version` из образа: формат конфига соответствует версии образа, а не talosctl
+- команда `add` учитывает образ из UnattendedInstallConfig и переносит доп. документы патча (KubeletConfig и т.д.)
+- исправлена генерация: `error decoding document ... mapping key "apiVersion" already defined` — разделитель документов определялся по подстроке `---\n` и ломал PEM-ключи (`-----END EC PRIVATE KEY-----`)
+
 ## v1.5.1
 
 - добавлена поддержка интеграции с spegel
