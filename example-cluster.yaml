@@ -28,6 +28,12 @@ useMirrors: true
 # httpProxy: http://proxy.example.com:3128
 # дополнительные исключения no_proxy через запятую
 # noProxy: "registry.example.com,10.0.0.0/8"
+# дополнительные записи /etc/hosts на нодах (применяются после apply-config)
+# extraHosts:
+#   - ip: 10.0.0.5
+#     hostnames:
+#       - registry.example.com
+#       - registry
 useMaxPods: false
 useSpegel: false
 cpIPs:

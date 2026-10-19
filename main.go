@@ -21,7 +21,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
 	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.14.1"
+	version    = "v1.14.2"
 )
 
 const (
@@ -56,6 +56,12 @@ func isTalos114OrNewer(version string) bool {
 	return compareVersions(version, "1.14.0") >= 0
 }
 
+// HostEntry — запись /etc/hosts: IP и список имён.
+type HostEntry struct {
+	IP        string   `yaml:"ip"`
+	Hostnames []string `yaml:"hostnames"`
+}
+
 type Answers struct {
 	ClusterName    string
 	K8sVersion     string
@@ -63,6 +69,7 @@ type Answers struct {
 	InstallerMirror string
 	HTTPProxy       string
 	NoProxy         string
+	ExtraHosts      []HostEntry
 	Iface          string
 	CPCount        int
 	WorkerCount    int
@@ -96,6 +103,7 @@ type FileInput struct {
 	InstallerMirror string  `yaml:"installerMirror"`
 	HTTPProxy       string  `yaml:"httpProxy"`
 	NoProxy         string  `yaml:"noProxy"`
+	ExtraHosts      []HostEntry `yaml:"extraHosts"`
 	Iface          string   `yaml:"iface"`
 	CPCount        int      `yaml:"cpCount"`
 	WorkerCount    int      `yaml:"workerCount"`
@@ -432,6 +440,13 @@ func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
 			doc("ResolverConfig", map[string]interface{}{"nameservers": servers})
 			delete(network, "nameservers")
 		}
+		// machine.network.extraHostEntries -> StaticHostConfig (по документу на IP)
+		if entries, ok := network["extraHostEntries"].([]map[string]interface{}); ok {
+			for _, e := range entries {
+				doc("StaticHostConfig", map[string]interface{}{"name": e["ip"], "hostnames": e["aliases"]})
+			}
+			delete(network, "extraHostEntries")
+		}
 		if len(network) == 0 {
 			delete(patch.Machine, "network")
 		}
@@ -690,6 +705,13 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		patch.Cluster["apiServer"].(map[string]interface{})["certSANs"] = certSANs
 	}
 
+	if len(ans.ExtraHosts) > 0 {
+		var entries []map[string]interface{}
+		for _, h := range ans.ExtraHosts {
+			entries = append(entries, map[string]interface{}{"ip": h.IP, "aliases": h.Hostnames})
+		}
+		patch.Machine["network"].(map[string]interface{})["extraHostEntries"] = entries
+	}
 	if ans.HTTPProxy != "" {
 		// Talos >= 1.14: EnvironmentConfig (см. migratePatchToDocuments), иначе machine.env
 		patch.Machine["env"] = proxyEnv(ans)
@@ -952,6 +974,7 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		InstallerMirror: ans.InstallerMirror,
 		HTTPProxy:       ans.HTTPProxy,
 		NoProxy:         ans.NoProxy,
+		ExtraHosts:      ans.ExtraHosts,
 		Iface:          ans.Iface,
 		CPCount:        ans.CPCount,
 		WorkerCount:    ans.WorkerCount,
@@ -1175,6 +1198,7 @@ func generateCmd() *cobra.Command {
 					InstallerMirror: input.InstallerMirror,
 					HTTPProxy:       input.HTTPProxy,
 					NoProxy:         input.NoProxy,
+					ExtraHosts:      input.ExtraHosts,
 					Iface:          input.Iface,
 					CPCount:        input.CPCount,
 					WorkerCount:    input.WorkerCount,
@@ -1224,6 +1248,20 @@ func generateCmd() *cobra.Command {
 				ans.NoProxy = askNumbered("Enter extra no_proxy entries, comma separated [none]: ", "none")
 				if ans.NoProxy == "none" {
 					ans.NoProxy = ""
+				}
+			}
+			if askYesNoNumbered("Add extra /etc/hosts entries?", "n") {
+				for {
+					line := askNumbered("Enter entry as 'IP host1,host2' ('-' to finish) [-]: ", "-")
+					if line == "-" {
+						break
+					}
+					fields := strings.Fields(line)
+					if len(fields) != 2 || net.ParseIP(fields[0]) == nil {
+						fmt.Printf("%sInvalid format. Example: 10.0.0.5 registry.example.com,reg%s\n", colorRed, colorReset)
+						continue
+					}
+					ans.ExtraHosts = append(ans.ExtraHosts, HostEntry{IP: fields[0], Hostnames: strings.Split(fields[1], ",")})
 				}
 			}
 			ans.Iface = askNumbered("Enter network interface name: ens18 for KVM, Proxmox or eth0 for Nebula, OpenStack [ens18]: ", "ens18")

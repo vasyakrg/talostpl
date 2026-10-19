@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.2
+
+- добавлен ключ `extraHosts`: записи /etc/hosts на нодах (Talos >= 1.14 — StaticHostConfig, 1.12/1.13 — `machine.network.extraHostEntries`)
+
 ## v1.14.1
 
 - версионирование утилиты теперь привязано к мажору talosctl: v1.14.x соответствует Talos 1.14
