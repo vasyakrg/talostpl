@@ -1,7 +1,7 @@
 clusterName: talos-demo
 k8sVersion: 1.37.1
 image: factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4
-downloadImage: false
+installerMirror: ""  # зеркало для installer-образа (factory.talos.dev), например https://registry.example.com:5000
 iface: ens18
 cpCount: 3
 workerCount: 3

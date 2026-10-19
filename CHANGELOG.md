@@ -8,6 +8,8 @@
 - Talos >= 1.14: патч генерируется новыми документами (UnattendedInstallConfig, ResolverConfig, TimeSyncConfig, RegistryMirrorConfig, CRICustomizationConfig, KubeletConfig, KubeAPIServerConfig, удаление KubeFlannelCNIConfig/KubeProxyConfig), иначе `talosctl validate` падает на конфликте с v1alpha1-полями; для 1.12/1.13 формат прежний
 - `talosctl gen config` теперь вызывается с `--talos-version` из образа: формат конфига соответствует версии образа, а не talosctl
 - команда `add` учитывает образ из UnattendedInstallConfig и переносит доп. документы патча (KubeletConfig и т.д.)
+- **ключ `downloadImage` удалён**: Talos всегда тянет installer-образ из реестра, режима «использовать загруженный образ» нет, ключ только убирал строку из конфига
+- добавлен ключ `installerMirror`: зеркало реестра для installer-образа (factory.talos.dev), для установки без выхода в интернет (образ должен лежать в зеркале)
 - исправлена генерация: `error decoding document ... mapping key "apiVersion" already defined` — разделитель документов определялся по подстроке `---\n` и ломал PEM-ключи (`-----END EC PRIVATE KEY-----`)
 
 ## v1.5.1

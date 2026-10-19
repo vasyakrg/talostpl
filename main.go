@@ -59,7 +59,7 @@ type Answers struct {
 	ClusterName    string
 	K8sVersion     string
 	Image          string
-	DownloadImage  bool
+	InstallerMirror string
 	Iface          string
 	CPCount        int
 	WorkerCount    int
@@ -90,7 +90,7 @@ type FileInput struct {
 	ClusterName    string   `yaml:"clusterName"`
 	K8sVersion     string   `yaml:"k8sVersion"`
 	Image          string   `yaml:"image"`
-	DownloadImage  bool     `yaml:"downloadImage"`
+	InstallerMirror string  `yaml:"installerMirror"`
 	Iface          string   `yaml:"iface"`
 	CPCount        int      `yaml:"cpCount"`
 	WorkerCount    int      `yaml:"workerCount"`
@@ -472,54 +472,6 @@ func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
 	return docs
 }
 
-// removeInstallImageFromFile removes the `image:` line from the `install:` block in a YAML file.
-// Used when downloadImage is disabled so the installer keeps the currently booted image.
-func removeInstallImageFromFile(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	lines := strings.Split(string(data), "\n")
-	var result []string
-	inInstall := false
-	installIndent := -1
-	childIndent := -1
-	for _, line := range lines {
-		trimmed := strings.TrimLeft(line, " ")
-		indent := len(line) - len(trimmed)
-		if !inInstall {
-			if strings.HasPrefix(trimmed, "install:") || strings.HasPrefix(trimmed, "installer:") {
-				inInstall = true
-				installIndent = indent
-				childIndent = -1
-			}
-			result = append(result, line)
-			continue
-		}
-		if strings.TrimSpace(line) == "" {
-			result = append(result, line)
-			continue
-		}
-		if indent <= installIndent {
-			inInstall = false
-			installIndent = -1
-			childIndent = -1
-			result = append(result, line)
-			continue
-		}
-		if childIndent == -1 {
-			childIndent = indent
-		}
-		if indent == childIndent && strings.HasPrefix(trimmed, "image:") {
-			continue
-		}
-		result = append(result, line)
-	}
-
-	return os.WriteFile(path, []byte(strings.Join(result, "\n")), 0644)
-}
-
 // removeHostnameConfigFromFile removes the auto-generated HostnameConfig document from a multi-document YAML file.
 func hasKind(doc, kind string) bool {
 	return strings.Contains(doc, "\nkind: "+kind+"\n") || strings.HasPrefix(doc, "kind: "+kind+"\n") ||
@@ -618,14 +570,20 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		},
 		Cluster: map[string]interface{}{},
 	}
+	mirrors := map[string]interface{}{}
 	if ans.UseMirrors {
-		patch.Machine["registries"] = map[string]interface{}{
-			"mirrors": map[string]interface{}{
-				"docker.io": map[string]interface{}{
-					"endpoints": []string{"https://mirror.gcr.io", "https://dockerhub.timeweb.cloud"},
-				},
-			},
+		mirrors["docker.io"] = map[string]interface{}{
+			"endpoints": []string{"https://mirror.gcr.io", "https://dockerhub.timeweb.cloud"},
 		}
+	}
+	// Зеркало для installer-образа: Talos всегда тянет его из реестра (factory.talos.dev)
+	if ans.InstallerMirror != "" {
+		mirrors["factory.talos.dev"] = map[string]interface{}{
+			"endpoints": []string{ans.InstallerMirror},
+		}
+	}
+	if len(mirrors) > 0 {
+		patch.Machine["registries"] = map[string]interface{}{"mirrors": mirrors}
 	}
 	if ans.UseExtBalancer && ans.ExtBalancerIP != "" {
 		ips := strings.Split(ans.ExtBalancerIP, ",")
@@ -883,19 +841,6 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		}
 	}
 
-	// Strip install.image from base configs when external image download is disabled.
-	if !ans.DownloadImage {
-		for _, baseFile := range []string{"controlplane.yaml", "worker.yaml"} {
-			if _, err := os.Stat(baseFile); err != nil {
-				continue
-			}
-			if err := removeInstallImageFromFile(baseFile); err != nil {
-				fmt.Printf("%sError removing install.image from %s: %v%s\n", colorRed, baseFile, err, colorReset)
-				os.Exit(1)
-			}
-		}
-	}
-
 	for i := 1; i <= ans.CPCount; i++ {
 		if err := runCmd("talosctl", "machineconfig", "patch", "controlplane.yaml", "--patch", fmt.Sprintf("@cp%d.patch", i), "--output", fmt.Sprintf("cp%d.yaml", i)); err != nil {
 			fmt.Printf("%sError patching cp%d: %v%s\n", colorRed, i, err, colorReset)
@@ -959,7 +904,7 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		ClusterName:    ans.ClusterName,
 		K8sVersion:     ans.K8sVersion,
 		Image:          ans.Image,
-		DownloadImage:  ans.DownloadImage,
+		InstallerMirror: ans.InstallerMirror,
 		Iface:          ans.Iface,
 		CPCount:        ans.CPCount,
 		WorkerCount:    ans.WorkerCount,
@@ -1180,7 +1125,7 @@ func generateCmd() *cobra.Command {
 					ClusterName:    input.ClusterName,
 					K8sVersion:     input.K8sVersion,
 					Image:          input.Image,
-					DownloadImage:  input.DownloadImage,
+					InstallerMirror: input.InstallerMirror,
 					Iface:          input.Iface,
 					CPCount:        input.CPCount,
 					WorkerCount:    input.WorkerCount,
@@ -1222,7 +1167,9 @@ func generateCmd() *cobra.Command {
 			ans.ClusterName = askNumbered("Enter cluster name [talos-demo]: ", "talos-demo")
 			ans.K8sVersion = askNumbered("Enter Kubernetes version ["+k8sVersion+"]: ", k8sVersion)
 			ans.Image = askNumbered("Enter Talos installer image ["+image+"]: ", image)
-			ans.DownloadImage = askYesNoNumbered("Download installer image from external registry? (No keeps the currently booted image)", "n")
+			if askYesNoNumbered("Use a registry mirror for the installer image (factory.talos.dev)?", "n") {
+				ans.InstallerMirror = askNumbered("Enter mirror URL (e.g. https://registry.example.com:5000): ", "")
+			}
 			ans.Iface = askNumbered("Enter network interface name: ens18 for KVM, Proxmox or eth0 for Nebula, OpenStack [ens18]: ", "ens18")
 			var cpCount int
 			for {
