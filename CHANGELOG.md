@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.4
+
+- `imageCache: true` теперь добавляет и `ImageCacheConfig` (`local.enabled: true`): без него Talos не использует кэш из ISO и тянет образ по сети
+
 ## v1.14.3
 
 - добавлены ключи `imageCache` и `imageCacheSize`: том `IMAGECACHE` (VolumeConfig) для копирования image cache из ISO на диск при установке, только Talos >= 1.14

@@ -21,7 +21,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
 	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.14.3"
+	version    = "v1.14.4"
 )
 
 const (
@@ -736,6 +736,12 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			if size == "" {
 				size = "2GB"
 			}
+			// Кэш по умолчанию выключен и без этого документа не используется
+			patchDocs = append(patchDocs, map[string]interface{}{
+				"apiVersion": "v1alpha1",
+				"kind":       "ImageCacheConfig",
+				"local":      map[string]interface{}{"enabled": true},
+			})
 			// Том, в который при установке копируется image cache из ISO
 			patchDocs = append(patchDocs, map[string]interface{}{
 				"apiVersion": "v1alpha1",
