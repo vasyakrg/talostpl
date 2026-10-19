@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.3
+
+- добавлены ключи `imageCache` и `imageCacheSize`: том `IMAGECACHE` (VolumeConfig) для копирования image cache из ISO на диск при установке, только Talos >= 1.14
+
 ## v1.14.2
 
 - добавлен ключ `extraHosts`: записи /etc/hosts на нодах (Talos >= 1.14 — StaticHostConfig, 1.12/1.13 — `machine.network.extraHostEntries`)

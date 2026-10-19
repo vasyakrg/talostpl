@@ -29,6 +29,9 @@ useMirrors: true
 # дополнительные исключения no_proxy через запятую
 # noProxy: "registry.example.com,10.0.0.0/8"
 # дополнительные записи /etc/hosts на нодах (применяются после apply-config)
+# ISO собран с image cache (--image-cache, Talos >= 1.14): кэш копируется на диск при установке
+# imageCache: true
+# imageCacheSize: 2GB
 # extraHosts:
 #   - ip: 10.0.0.5
 #     hostnames:

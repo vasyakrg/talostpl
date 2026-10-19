@@ -21,7 +21,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
 	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.14.2"
+	version    = "v1.14.3"
 )
 
 const (
@@ -70,6 +70,8 @@ type Answers struct {
 	HTTPProxy       string
 	NoProxy         string
 	ExtraHosts      []HostEntry
+	ImageCache      bool
+	ImageCacheSize  string
 	Iface          string
 	CPCount        int
 	WorkerCount    int
@@ -104,6 +106,8 @@ type FileInput struct {
 	HTTPProxy       string  `yaml:"httpProxy"`
 	NoProxy         string  `yaml:"noProxy"`
 	ExtraHosts      []HostEntry `yaml:"extraHosts"`
+	ImageCache      bool        `yaml:"imageCache"`
+	ImageCacheSize  string      `yaml:"imageCacheSize"`
 	Iface          string   `yaml:"iface"`
 	CPCount        int      `yaml:"cpCount"`
 	WorkerCount    int      `yaml:"workerCount"`
@@ -717,6 +721,9 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		patch.Machine["env"] = proxyEnv(ans)
 	}
 	patchDocs := []interface{}{patch}
+	if ans.ImageCache && !isTalos114OrNewer(talosVersion) {
+		fmt.Printf("%simageCache is supported only for Talos >= 1.14, ignored%s\n", colorYellow, colorReset)
+	}
 	if isTalos114OrNewer(talosVersion) {
 		migrated := migratePatchToDocuments(&patch, ans)
 		patchDocs = nil
@@ -724,6 +731,23 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 			patchDocs = append(patchDocs, patch)
 		}
 		patchDocs = append(patchDocs, migrated...)
+		if ans.ImageCache {
+			size := ans.ImageCacheSize
+			if size == "" {
+				size = "2GB"
+			}
+			// Том, в который при установке копируется image cache из ISO
+			patchDocs = append(patchDocs, map[string]interface{}{
+				"apiVersion": "v1alpha1",
+				"kind":       "VolumeConfig",
+				"name":       "IMAGECACHE",
+				"provisioning": map[string]interface{}{
+					"diskSelector": map[string]interface{}{"match": "system_disk"},
+					"minSize":      size,
+					"maxSize":      size,
+				},
+			})
+		}
 	}
 	fileWriteYAMLDocs(filepath.Join(configDir, "patch.yaml"), patchDocs...)
 	fmt.Printf("%sCreated patch.yaml%s\n", colorGreen, colorReset)
@@ -975,6 +999,8 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		HTTPProxy:       ans.HTTPProxy,
 		NoProxy:         ans.NoProxy,
 		ExtraHosts:      ans.ExtraHosts,
+		ImageCache:      ans.ImageCache,
+		ImageCacheSize:  ans.ImageCacheSize,
 		Iface:          ans.Iface,
 		CPCount:        ans.CPCount,
 		WorkerCount:    ans.WorkerCount,
@@ -1199,6 +1225,8 @@ func generateCmd() *cobra.Command {
 					HTTPProxy:       input.HTTPProxy,
 					NoProxy:         input.NoProxy,
 					ExtraHosts:      input.ExtraHosts,
+					ImageCache:      input.ImageCache,
+					ImageCacheSize:  input.ImageCacheSize,
 					Iface:          input.Iface,
 					CPCount:        input.CPCount,
 					WorkerCount:    input.WorkerCount,
@@ -1249,6 +1277,10 @@ func generateCmd() *cobra.Command {
 				if ans.NoProxy == "none" {
 					ans.NoProxy = ""
 				}
+			}
+			if askYesNoNumbered("ISO is built with an image cache (Talos >= 1.14, copied to disk on install)?", "n") {
+				ans.ImageCache = true
+				ans.ImageCacheSize = askNumbered("Enter IMAGECACHE volume size [2GB]: ", "2GB")
 			}
 			if askYesNoNumbered("Add extra /etc/hosts entries?", "n") {
 				for {
