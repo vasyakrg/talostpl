@@ -24,6 +24,10 @@ useVFIOPCI: false
 useVFIOIOMMU: false
 useOVS: false
 useMirrors: true
+# прокси для нод (http_proxy и https_proxy); no_proxy с подсетями кластера, VIP и .svc добавляется автоматически
+# httpProxy: http://proxy.example.com:3128
+# дополнительные исключения no_proxy через запятую
+# noProxy: "registry.example.com,10.0.0.0/8"
 useMaxPods: false
 useSpegel: false
 cpIPs:

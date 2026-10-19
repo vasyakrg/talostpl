@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -20,7 +21,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
 	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.6.1"
+	version    = "v1.14.1"
 )
 
 const (
@@ -60,6 +61,8 @@ type Answers struct {
 	K8sVersion     string
 	Image          string
 	InstallerMirror string
+	HTTPProxy       string
+	NoProxy         string
 	Iface          string
 	CPCount        int
 	WorkerCount    int
@@ -91,6 +94,8 @@ type FileInput struct {
 	K8sVersion     string   `yaml:"k8sVersion"`
 	Image          string   `yaml:"image"`
 	InstallerMirror string  `yaml:"installerMirror"`
+	HTTPProxy       string  `yaml:"httpProxy"`
+	NoProxy         string  `yaml:"noProxy"`
 	Iface          string   `yaml:"iface"`
 	CPCount        int      `yaml:"cpCount"`
 	WorkerCount    int      `yaml:"workerCount"`
@@ -356,6 +361,36 @@ func fileWriteYAMLWithHostname(path string, data interface{}, hostname string, e
 	}
 }
 
+// proxyEnv формирует переменные окружения прокси для нод.
+// no_proxy включает подсеть нод, pod/service CIDR по умолчанию, VIP, балансировщики
+// и внутренние домены, чтобы трафик кластера не уходил в прокси.
+func proxyEnv(ans Answers) map[string]interface{} {
+	noProxy := []string{"localhost", "127.0.0.1", ".svc", ".cluster.local", "10.244.0.0/16", "10.96.0.0/12"}
+	if _, ipnet, err := net.ParseCIDR(fmt.Sprintf("%s/%s", ans.Gateway, ans.Netmask)); err == nil {
+		noProxy = append(noProxy, ipnet.String())
+	}
+	if ans.VIPIP != "" {
+		noProxy = append(noProxy, strings.Split(ans.VIPIP, "/")[0])
+	}
+	if ans.UseExtBalancer {
+		for _, ip := range strings.Split(ans.ExtBalancerIP, ",") {
+			if ip = strings.TrimSpace(ip); ip != "" {
+				noProxy = append(noProxy, ip)
+			}
+		}
+	}
+	for _, e := range strings.Split(ans.NoProxy, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			noProxy = append(noProxy, e)
+		}
+	}
+	return map[string]interface{}{
+		"http_proxy":  ans.HTTPProxy,
+		"https_proxy": ans.HTTPProxy,
+		"no_proxy":    strings.Join(noProxy, ","),
+	}
+}
+
 // fileWriteYAMLDocs записывает несколько YAML-документов подряд.
 func fileWriteYAMLDocs(path string, docs ...interface{}) {
 	f, err := os.Create(path)
@@ -436,6 +471,12 @@ func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
 			}
 		}
 		delete(patch.Machine, "registries")
+	}
+
+	// machine.env (proxy) -> EnvironmentConfig
+	if env, ok := patch.Machine["env"].(map[string]interface{}); ok {
+		doc("EnvironmentConfig", map[string]interface{}{"variables": env})
+		delete(patch.Machine, "env")
 	}
 
 	// machine.files (spegel) -> CRICustomizationConfig
@@ -649,6 +690,10 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		patch.Cluster["apiServer"].(map[string]interface{})["certSANs"] = certSANs
 	}
 
+	if ans.HTTPProxy != "" {
+		// Talos >= 1.14: EnvironmentConfig (см. migratePatchToDocuments), иначе machine.env
+		patch.Machine["env"] = proxyEnv(ans)
+	}
 	patchDocs := []interface{}{patch}
 	if isTalos114OrNewer(talosVersion) {
 		migrated := migratePatchToDocuments(&patch, ans)
@@ -905,6 +950,8 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		K8sVersion:     ans.K8sVersion,
 		Image:          ans.Image,
 		InstallerMirror: ans.InstallerMirror,
+		HTTPProxy:       ans.HTTPProxy,
+		NoProxy:         ans.NoProxy,
 		Iface:          ans.Iface,
 		CPCount:        ans.CPCount,
 		WorkerCount:    ans.WorkerCount,
@@ -1126,6 +1173,8 @@ func generateCmd() *cobra.Command {
 					K8sVersion:     input.K8sVersion,
 					Image:          input.Image,
 					InstallerMirror: input.InstallerMirror,
+					HTTPProxy:       input.HTTPProxy,
+					NoProxy:         input.NoProxy,
 					Iface:          input.Iface,
 					CPCount:        input.CPCount,
 					WorkerCount:    input.WorkerCount,
@@ -1169,6 +1218,13 @@ func generateCmd() *cobra.Command {
 			ans.Image = askNumbered("Enter Talos installer image ["+image+"]: ", image)
 			if askYesNoNumbered("Use a registry mirror for the installer image (factory.talos.dev)?", "n") {
 				ans.InstallerMirror = askNumbered("Enter mirror URL (e.g. https://registry.example.com:5000): ", "")
+			}
+			if askYesNoNumbered("Use HTTP proxy for the nodes?", "n") {
+				ans.HTTPProxy = askNumbered("Enter proxy URL (e.g. http://proxy.example.com:3128): ", "")
+				ans.NoProxy = askNumbered("Enter extra no_proxy entries, comma separated [none]: ", "none")
+				if ans.NoProxy == "none" {
+					ans.NoProxy = ""
+				}
 			}
 			ans.Iface = askNumbered("Enter network interface name: ens18 for KVM, Proxmox or eth0 for Nebula, OpenStack [ens18]: ", "ens18")
 			var cpCount int
