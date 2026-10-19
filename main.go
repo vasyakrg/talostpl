@@ -21,7 +21,7 @@ var (
 	image      string = "factory.talos.dev/metal-installer/6adc7e7fba27948460e2231e5272e88b85159da3f3db980551976bf9898ff64b:v1.14.4"
 	k8sVersion string = "1.37.1"
 	configDir  string = "config"
-	version    = "v1.14.4"
+	version    = "v1.14.5"
 )
 
 const (
@@ -424,8 +424,7 @@ func fileWriteYAMLDocs(path string, docs ...interface{}) {
 // migratePatchToDocuments (Talos >= 1.14) переносит устаревшие v1alpha1-поля патча
 // в отдельные документы конфигурации и возвращает эти документы.
 // Перенесённые поля удаляются из patch, иначе talosctl validate падает на конфликте.
-func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
-	var docs []interface{}
+func migratePatchToDocuments(patch *PatchConfig, ans Answers) (docs, cpOnlyDocs []interface{}) {
 	doc := func(kind string, fields map[string]interface{}) {
 		d := map[string]interface{}{"apiVersion": "v1alpha1", "kind": kind}
 		for k, v := range fields {
@@ -521,7 +520,12 @@ func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
 	// cluster.apiServer.certSANs -> KubeAPIServerConfig.certExtraSANs
 	if api, ok := patch.Cluster["apiServer"].(map[string]interface{}); ok {
 		if sans, ok := api["certSANs"]; ok {
-			doc("KubeAPIServerConfig", map[string]interface{}{"certExtraSANs": sans})
+			// KubeAPIServerConfig допустим только на control plane: уходит в cpN.patch
+			cpOnlyDocs = append(cpOnlyDocs, map[string]interface{}{
+				"apiVersion":    "v1alpha1",
+				"kind":          "KubeAPIServerConfig",
+				"certExtraSANs": sans,
+			})
 			delete(api, "certSANs")
 		}
 		if len(api) == 0 {
@@ -529,7 +533,7 @@ func migratePatchToDocuments(patch *PatchConfig, ans Answers) []interface{} {
 		}
 	}
 
-	return docs
+	return docs, cpOnlyDocs
 }
 
 // removeHostnameConfigFromFile removes the auto-generated HostnameConfig document from a multi-document YAML file.
@@ -721,11 +725,13 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		patch.Machine["env"] = proxyEnv(ans)
 	}
 	patchDocs := []interface{}{patch}
+	var cpOnlyDocs []interface{} // документы только для control plane (Talos >= 1.14)
 	if ans.ImageCache && !isTalos114OrNewer(talosVersion) {
 		fmt.Printf("%simageCache is supported only for Talos >= 1.14, ignored%s\n", colorYellow, colorReset)
 	}
 	if isTalos114OrNewer(talosVersion) {
-		migrated := migratePatchToDocuments(&patch, ans)
+		var migrated []interface{}
+		migrated, cpOnlyDocs = migratePatchToDocuments(&patch, ans)
 		patchDocs = nil
 		if len(patch.Machine) > 0 || len(patch.Cluster) > 0 {
 			patchDocs = append(patchDocs, patch)
@@ -802,7 +808,7 @@ func runGeneration(ans Answers, usedIPs map[string]struct{}, cpIPs, workerIPs []
 		if ans.UseVIP && ans.VIPIP != "" {
 			cpPatch["machine"].(map[string]interface{})["network"].(map[string]interface{})["interfaces"].([]map[string]interface{})[0]["vip"] = map[string]interface{}{"ip": ans.VIPIP}
 		}
-		var cpExtraDocs []interface{}
+		cpExtraDocs := append([]interface{}{}, cpOnlyDocs...)
 		if ans.WorkerCount == 0 && isTalos114OrNewer(talosVersion) {
 			cpExtraDocs = append(cpExtraDocs, map[string]interface{}{
 				"apiVersion": "v1alpha1",

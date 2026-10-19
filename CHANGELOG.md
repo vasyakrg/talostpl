@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14.5
+
+- исправлено: при `useExtBalancer` документ `KubeAPIServerConfig` (certExtraSANs) попадал в конфиги worker, а он разрешён только на control plane; теперь он только в `cpN.patch`
+
 ## v1.14.4
 
 - `imageCache: true` теперь добавляет и `ImageCacheConfig` (`local.enabled: true`): без него Talos не использует кэш из ISO и тянет образ по сети
